@@ -394,7 +394,7 @@ function setOutfit(av, o) {
 
 function makeCharNode(look, name) {
   const canvas = document.createElement('canvas');
-  canvas.width = 256; canvas.height = 512;
+  canvas.width = 320; canvas.height = 640;
   const ctx = canvas.getContext('2d');
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
