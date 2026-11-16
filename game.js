@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { setupShop } from './shop.js';
+import { TOOL_COUNT, CATS, itemAt, getItem, pageTools, PAGE_SIZE } from './tools.js';
+import { loadLook, saveLook, loadName, saveName, sanitizeName, drawCharacter, defaultLook, fillCreator, clampLook } from './character.js';
+import { connectPark } from './net.js';
 
 // ---------- settings (same as the Roblox Config) ----------
 const CFG = { plotSize: 96, grid: 4, maxPieces: 150, startCoins: 100, coinsPerTick: 5, visitorBonus: 3, tickSeconds: 10 };
@@ -18,23 +21,6 @@ const OUTFITS = [
   { name: 'Cotton Candy', top: 0xffc8e6, bottom: 0xbea0ff, extra: 'Crown' },
   { name: 'Barista', top: 0xfff0e6, bottom: 0x784b32, extra: 'Cup' },
 ];
-const PIECES = [
-  { id: 'Speaker', name: 'Speaker', cost: 0, fp: [4, 4] },
-  { id: 'Lights', name: 'Party Light', cost: 0, fp: [4, 4] },
-  { id: 'Stage', name: 'Stage', cost: 0, fp: [16, 10] },
-  { id: 'LogoSign', name: 'Coffeebreak Sign', cost: 0, fp: [8, 2] },
-  { id: 'Poster', name: 'Character Poster', cost: 40, fp: [6, 2] },
-  { id: 'DanceFloor', name: 'Dance Floor', cost: 50, fp: [12, 12] },
-  { id: 'TrackStraight', name: 'Coaster Track', cost: 60, fp: [4, 12] },
-  { id: 'TrackRamp', name: 'Coaster Ramp', cost: 60, fp: [4, 12] },
-  { id: 'FoodStall', name: 'Coffee Stall', cost: 80, fp: [10, 6] },
-  { id: 'Slide', name: 'Slide', cost: 120, fp: [6, 16] },
-  { id: 'Swing', name: 'Swing', cost: 150, fp: [10, 6] },
-  { id: 'Carousel', name: 'Carousel', cost: 300, fp: [16, 16] },
-  { id: 'FerrisWheel', name: 'Ferris Wheel', cost: 500, fp: [28, 8] },
-  { id: 'CoasterLoop', name: 'Roller Coaster', cost: 800, fp: [36, 22] },
-];
-const byId = Object.fromEntries(PIECES.map(p => [p.id, p]));
 const SAVE_KEY = 'coffeebreakParkBuilder_v1';
 
 // ---------- state ----------
@@ -42,7 +28,7 @@ let state = { coins: CFG.startCoins, unlocked: {}, pieces: [], track: 0, outfit:
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && typeof s === 'object') state = Object.assign(state, s); } catch (e) {}
 if (!Array.isArray(state.pieces)) state.pieces = [];
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {} }
-const isUnlocked = id => byId[id] && (byId[id].cost <= 0 || state.unlocked[id]);
+const isUnlocked = id => { const it = getItem(id); return it && (it.cost <= 0 || state.unlocked[id]); };
 
 // ---------- renderer ----------
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -259,9 +245,50 @@ const B = {
     }
     box(g, 6, 2, 4, 15, 1, -4, C.Lilac);
   },
+  Path(g) { box(g, 8, 0.2, 8, 0, 0.1, 0, C.Lilac); },
+  Tree(g) { box(g, 1.4, 6, 1.4, 0, 3, 0, C.Coffee); ball(g, 3.2, 0, 8, 0, 0x4aa86a); ball(g, 2.2, 1.4, 7.2, 0.6, 0x68c07e); },
+  Bush(g) { ball(g, 2, 0, 1.6, 0, 0x4aa86a); ball(g, 1.4, 1.3, 0.4, 0.4, 0x68c07e); },
+  Flower(g) { box(g, 0.25, 2, 0.25, 0, 1, 0, 0x4aa86a); ball(g, 0.7, 0, 2.3, 0, C.HotPink, true); },
+  Planter(g) { box(g, 3, 1.2, 3, 0, 0.6, 0, C.Coffee); ball(g, 1.2, 0, 2, 0, 0x4aa86a); },
+  Fence(g) { for (const x of [-3.5, -1.2, 1.2, 3.5]) box(g, 0.3, 2.4, 0.3, x, 1.2, 0, C.White); box(g, 8, 0.25, 0.25, 0, 1.6, 0, C.Pink); box(g, 8, 0.25, 0.25, 0, 0.8, 0, C.Pink); },
+  Gate(g) { B.Fence(g); box(g, 0.3, 3, 0.3, -1.6, 1.5, 0, C.White); box(g, 0.3, 3, 0.3, 1.6, 1.5, 0, C.White); box(g, 3.4, 0.3, 0.3, 0, 3, 0, C.HotPink); },
+  Pond(g) { cyl(g, 6, 0.3, 0, 0.15, 0, 0x5bb0d4, false, 24); cyl(g, 4.5, 0.2, 0, 0.28, 0, 0x7ec8ff, true, 24); },
+  Fountain(g) { cyl(g, 4, 0.6, 0, 0.3, 0, C.Lilac, false, 24); cyl(g, 0.6, 3, 0, 2, 0, C.White); ball(g, 0.8, 0, 3.8, 0, 0x7ec8ff, true); cyl(g, 2, 0.3, 0, 1.2, 0, 0x7ec8ff, true, 16); },
+  Hill(g) { const m = new THREE.Mesh(new THREE.ConeGeometry(7, 4, 8), mat(0xb8e6a8)); m.position.y = 2; g.add(m); },
+  Platform(g) { box(g, 12, 1.2, 8, 0, 0.6, 0, C.Cream); box(g, 12.4, 0.2, 8.4, 0, 1.25, 0, C.Pink); },
+  Arch(g) { box(g, 1, 8, 1, -5, 4, 0, C.Purple); box(g, 1, 8, 1, 5, 4, 0, C.Purple); box(g, 12, 1.2, 1.2, 0, 8.4, 0, C.HotPink); },
+  Rock(g) { box(g, 4, 2.2, 3.2, 0, 1.1, 0, 0x9a8a9a); box(g, 2.4, 1.6, 2, 1.2, 1.8, 0.4, 0x7a6a7a); },
+  Bench(g) { box(g, 6, 0.3, 1.6, 0, 1.2, 0, C.Coffee); box(g, 6, 1.4, 0.3, 0, 2, 0.7, C.Coffee); box(g, 0.3, 1.2, 1.6, -2.6, 0.6, 0, C.White); box(g, 0.3, 1.2, 1.6, 2.6, 0.6, 0, C.White); },
+  Balloon(g) { ball(g, 1.1, -0.8, 4.2, 0, C.HotPink, true); ball(g, 1.1, 0.8, 4.4, 0, C.Purple, true); ball(g, 1, 0, 5.2, 0.4, C.Pink, true); box(g, 0.08, 3, 0.08, 0, 2, 0, C.White); },
+  Flag(g) { box(g, 0.25, 8, 0.25, 0, 4, 0, C.White); box(g, 3.2, 2, 0.1, 1.7, 6.5, 0, C.HotPink); },
+  Statue(g) { cyl(g, 1.6, 0.6, 0, 0.3, 0, C.Lilac); box(g, 1.4, 2.4, 0.8, 0, 1.8, 0, C.Cream); box(g, 1.1, 1.1, 1.1, 0, 3.6, 0, C.Cream); },
 };
+const STRUCTURE = new Set([C.White, C.Black, 0x281932, C.Coffee]);
+function tintGroup(g, item) {
+  if (!item || !item.tint) return;
+  const hex = item.colorHex, style = item.variant;
+  g.traverse(o => {
+    if (!o.isMesh || !o.material || !o.material.color) return;
+    const prev = o.material.color.getHex();
+    const m = o.material.clone();
+    if (!STRUCTURE.has(prev)) {
+      const target = new THREE.Color(hex);
+      if (style === 'Pastel') m.color.copy(target).lerp(new THREE.Color(0xffffff), 0.35);
+      else if (style === 'Neon' || style === 'Glow') { m.color.copy(target); m.emissive = target.clone(); m.emissiveIntensity = style === 'Glow' ? 0.85 : 0.5; }
+      else if (style === 'Striped') { const odd = Math.abs(Math.round((o.position.x + o.position.z) * 2)) % 2; m.color.copy(odd ? target : target.clone().lerp(new THREE.Color(0xffffff), 0.4)); }
+      else m.color.lerp(target, 0.8);
+    }
+    o.material = m;
+  });
+  if (item.scale && item.scale !== 1) g.scale.setScalar(item.scale);
+}
 function buildPiece(id, variant) {
-  const g = new THREE.Group(); B[id](g, variant); g.userData.id = id; return g;
+  const item = getItem(id);
+  const visual = (item && item.visual) || id;
+  const g = new THREE.Group();
+  if (B[visual]) B[visual](g, variant);
+  if (item) tintGroup(g, item);
+  g.userData.id = id; return g;
 }
 
 // ---------- world: ground, plaza, plot ----------
@@ -305,6 +332,7 @@ plotMesh.rotation.x = -Math.PI / 2; plotMesh.position.set(PLOT.x, 0.05, PLOT.z);
 const gridHelper = new THREE.GridHelper(CFG.plotSize, CFG.plotSize / CFG.grid, C.HotPink, C.Lilac);
 gridHelper.position.set(PLOT.x, 0.07, PLOT.z); gridHelper.visible = false; scene.add(gridHelper);
 const h = CFG.plotSize / 2;
+const insidePlot = p => Math.abs(p.x - PLOT.x) < h && Math.abs(p.z - PLOT.z) < h;
 for (const [x, z, w, d] of [[0, -h, CFG.plotSize, 1], [0, h, CFG.plotSize, 1], [-h, 0, 1, CFG.plotSize], [h, 0, 1, CFG.plotSize]]) {
   if (z === -h) { box(scene, (w - 12) / 2, 1, d, PLOT.x - w / 4 - 3, 0.5, PLOT.z + z, C.Purple); box(scene, (w - 12) / 2, 1, d, PLOT.x + w / 4 + 3, 0.5, PLOT.z + z, C.Purple); }
   else box(scene, w, 1, d, PLOT.x + x, 0.5, PLOT.z + z, C.Purple);
@@ -321,13 +349,13 @@ for (let i = 0; i < 30; i++) {
 
 // ---------- placed pieces ----------
 const placed = []; // {data, group}
-function footprint(id, r) { const f = byId[id].fp; return r % 2 ? [f[1], f[0]] : [f[0], f[1]]; }
+function footprint(id, r) { const f = (getItem(id) || { fp: [4, 4] }).fp; return r % 2 ? [f[1], f[0]] : [f[0], f[1]]; }
 function addPlaced(d) {
   const g = buildPiece(d.id, d.v);
   g.position.set(PLOT.x + d.x, 0, PLOT.z + d.z); g.rotation.y = -d.r * Math.PI / 2;
   scene.add(g); placed.push({ data: d, group: g });
 }
-state.pieces.filter(d => byId[d.id]).forEach(addPlaced);
+state.pieces.filter(d => getItem(d.id)).forEach(addPlaced);
 
 // ---------- avatar ----------
 function makeAvatar(top, bottom, extra, skin = 0xffd9b8) {
@@ -363,57 +391,92 @@ function setOutfit(av, o) {
   p.ra.children.slice(1).forEach(c => p.ra.remove(c));
   setExtra(av, o.extra);
 }
-const player = makeAvatar(OUTFITS[0].top, OUTFITS[0].bottom, OUTFITS[0].extra);
-setOutfit(player, OUTFITS[state.outfit % 4]);
-player.position.set(0, 0, 46); player.rotation.y = 0;
-scene.add(player);
-function animateWalk(av, speed, t) {
-  const p = av.userData.parts, s = Math.sin(t * 10) * Math.min(1, speed / 8) * 0.8;
-  p.la.rotation.x = s; p.ra.rotation.x = -s; p.ll.rotation.x = -s; p.rl.rotation.x = s;
+
+function makeCharNode(look, name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sm = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: true, alphaTest: 0.12 });
+  const sprite = new THREE.Sprite(sm);
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTex(name || 'Player', '#9646dc'), transparent: true, depthTest: true }));
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.8, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.03;
+  const root = new THREE.Group();
+  root.add(sprite); root.add(tag); root.add(shadow);
+  function applyScale(l) {
+    const hm = [0.88, 1, 1.1][(l && l.h) || 1];
+    sprite.scale.set(3.2, 6.4 * hm, 1);
+    sprite.position.y = 3.2 * hm;
+    tag.scale.set(4, 1, 1);
+    tag.position.y = 6.5 * hm;
+  }
+  applyScale(look);
+  let curLook = look, curAnim = 'idle';
+  function redraw(anim, time, speed, flip) {
+    curAnim = anim || 'idle';
+    drawCharacter(ctx, curLook, curAnim, time, speed, flip);
+    tex.needsUpdate = true;
+  }
+  redraw('idle', 0, 0, false);
+  root.userData.char = {
+    redraw,
+    setLook(l) { curLook = clampLook(l); applyScale(curLook); redraw(curAnim, 0, 0, false); },
+    setName(n) { tag.material.map = textTex(n || 'Player', '#9646dc'); tag.material.needsUpdate = true; },
+    _last: -1, _anim: 'idle',
+  };
+  return root;
+}
+function shouldFlip(obj) {
+  const fx = -Math.sin(obj.rotation.y), fz = -Math.cos(obj.rotation.y);
+  return fx * Math.cos(camYaw) - fz * Math.sin(camYaw) < 0;
+}
+function tickChar(root, speed, time, airborne) {
+  const u = root.userData.char;
+  if (!u) return;
+  const anim = airborne ? 'jump' : (speed > 1 ? 'walk' : 'idle');
+  if (time - (u._last || 0) < 0.07 && u._anim === anim) return;
+  u._last = time; u._anim = anim;
+  u.redraw(anim, time, speed, shouldFlip(root));
 }
 
-// ---------- NPC visitors ----------
-const npcNames = ['Mia', 'Zoe', 'Leo', 'Ava', 'Kai', 'Ruby', 'Max', 'Lily'];
-const npcs = [];
-for (let i = 0; i < 8; i++) {
-  const o = OUTFITS[i % 4];
-  const av = makeAvatar(i % 2 ? o.bottom : o.top, i % 2 ? o.top : o.bottom, o.extra, [0xffd9b8, 0xc68e64, 0x8d5a3b, 0xf1c8a5][i % 4]);
-  av.position.set(Math.cos(i) * 25, 0, Math.sin(i) * 25);
-  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTex(npcNames[i], '#9646dc'), depthTest: true }));
-  tag.scale.set(4, 1, 1); tag.position.y = 7; av.add(tag);
-  scene.add(av);
-  npcs.push({ av, target: new THREE.Vector3(), wait: Math.random() * 3, inPark: false, name: npcNames[i] });
+let playerLook = loadLook();
+let playerName = loadName() || 'Player';
+const player = makeCharNode(playerLook, playerName);
+player.position.set(0, 0, 46); player.rotation.y = 0;
+scene.add(player);
+
+const peers = new Map();
+function upsertPeer(m) {
+  let p = peers.get(m.id);
+  if (!p) {
+    const root = makeCharNode(m.look || defaultLook(), m.name || 'Player');
+    scene.add(root);
+    p = { root, tx: m.x || 0, ty: m.y || 0, tz: m.z || 0, tr: m.r || 0, a: m.a || 'idle' };
+    peers.set(m.id, p);
+    root.position.set(p.tx, p.ty, p.tz);
+    root.rotation.y = p.tr;
+  } else {
+    if (m.look) p.root.userData.char.setLook(m.look);
+    if (m.name) p.root.userData.char.setName(m.name);
+  }
+  if (m.x != null) { p.tx = m.x; p.ty = m.y || 0; p.tz = m.z; p.tr = m.r || 0; p.a = m.a || p.a; }
 }
-function pickTarget(n) {
-  const goPark = placed.length > 0 && Math.random() < 0.65;
-  if (goPark) {
-    const p = placed[Math.floor(Math.random() * placed.length)].group.position;
-    n.target.set(p.x + (Math.random() - 0.5) * 14, 0, p.z - 6 - Math.random() * 6);
-    n.target.x = Math.max(PLOT.x - h + 3, Math.min(PLOT.x + h - 3, n.target.x));
-    n.target.z = Math.max(PLOT.z - h + 3, Math.min(PLOT.z + h - 3, n.target.z));
-  } else { const a = Math.random() * Math.PI * 2, r = 12 + Math.random() * 24; n.target.set(Math.cos(a) * r, 0, Math.sin(a) * r); }
+function removePeer(id) {
+  const p = peers.get(id);
+  if (!p) return;
+  scene.remove(p.root);
+  peers.delete(id);
 }
-npcs.forEach(pickTarget);
-const insidePlot = p => Math.abs(p.x - PLOT.x) < h && Math.abs(p.z - PLOT.z) < h;
-function stepNpc(n, dt, t) {
-  const p = n.av.position;
-  if (n.wait > 0) { n.wait -= dt; animateWalk(n.av, 0, t); n.av.userData.body.position.y = Math.abs(Math.sin(t * 6)) * 0.3 * (Math.sin(t) > 0 ? 1 : 0); return; }
-  const d = n.target.clone().sub(p); d.y = 0;
-  const dist = d.length();
-  // route through plot gate: if going between plaza and plot, head for gate first
-  const gate = new THREE.Vector3(PLOT.x, 0, PLOT.z - h);
-  let dir = d;
-  if (insidePlot(n.target) !== insidePlot(p) && Math.abs(p.x - gate.x) > 4 && Math.abs(p.z - gate.z) < 6) dir = gate.clone().sub(p);
-  else if (insidePlot(n.target) !== insidePlot(p) && Math.abs(p.z - gate.z) >= 6 && Math.abs(p.x - gate.x) > 4) dir = new THREE.Vector3(gate.x - p.x, 0, gate.z - p.z);
-  if (dist < 1) { n.wait = 2 + Math.random() * 5; pickTarget(n); return; }
-  dir.y = 0; dir.normalize();
-  p.addScaledVector(dir, 7 * dt);
-  n.av.rotation.y = Math.atan2(-dir.x, -dir.z);
-  animateWalk(n.av, 7, t + n.name.length);
-  n.av.userData.body.position.y = 0;
-  const now = insidePlot(p);
-  if (now && !n.inPark) toast(`${n.name} is visiting your park`);
-  n.inPark = now;
+function stepPeers(dt, time) {
+  for (const p of peers.values()) {
+    p.root.position.x += (p.tx - p.root.position.x) * Math.min(1, dt * 12);
+    p.root.position.y += (p.ty - p.root.position.y) * Math.min(1, dt * 12);
+    p.root.position.z += (p.tz - p.root.position.z) * Math.min(1, dt * 12);
+    p.root.rotation.y = p.tr;
+    tickChar(p.root, p.a === 'walk' ? 8 : 0, time, p.a === 'jump');
+  }
 }
 
 // ---------- audio ----------
@@ -443,22 +506,61 @@ updateCoins();
 function closePanels() { document.querySelectorAll('.panel').forEach(p => p.classList.remove('show')); }
 let buildMode = false, selected = null, ghost = null, rot = 0, variant = 1;
 const ghostPos = new THREE.Vector3(PLOT.x, 0, PLOT.z);
+let toolsCat = 'all', toolsQuery = '', toolsPage = 0;
 function renderPieces() {
-  const el = $('pieces'); el.innerHTML = '<h3>Pick a piece</h3>';
-  PIECES.forEach(p => {
-    const b = document.createElement('button'); b.className = 'piece' + (selected === p.id ? ' sel' : '');
-    b.innerHTML = p.name + '<small>' + (isUnlocked(p.id) ? (p.cost ? 'Unlocked' : 'Free') : 'Unlock for ' + p.cost + ' coins') + '</small>';
-    b.onclick = () => {
-      if (!isUnlocked(p.id)) {
-        if (state.coins < p.cost) return toast('Need ' + p.cost + ' coins');
-        state.coins -= p.cost; state.unlocked[p.id] = true; updateCoins(); save(); toast(p.name + ' unlocked');
-      }
-      selectPiece(p.id); closePanels();
-    };
-    el.appendChild(b);
+  const el = $('pieces');
+  el.innerHTML = '';
+  const h = document.createElement('h3'); h.textContent = 'Build / Tools'; el.appendChild(h);
+  const tabs = document.createElement('div'); tabs.className = 'tabs';
+  CATS.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'tab' + (toolsCat === c.id ? ' sel' : ''); b.textContent = c.name;
+    b.onclick = () => { toolsCat = c.id; toolsPage = 0; renderPieces(); };
+    tabs.appendChild(b);
   });
+  el.appendChild(tabs);
+  const search = document.createElement('input');
+  search.type = 'search'; search.id = 'toolSearch'; search.placeholder = 'Search tools'; search.value = toolsQuery;
+  search.setAttribute('aria-label', 'Search tools');
+  search.autocomplete = 'off';
+  search.addEventListener('input', () => { toolsQuery = search.value; toolsPage = 0; renderPiecesPage(); });
+  el.appendChild(search);
+  const meta = document.createElement('p'); meta.className = 'tools-meta'; meta.id = 'toolsMeta'; el.appendChild(meta);
+  const grid = document.createElement('div'); grid.className = 'tools-grid'; grid.id = 'toolsGrid'; el.appendChild(grid);
+  const pager = document.createElement('div'); pager.className = 'tools-page'; pager.id = 'toolsPage'; el.appendChild(pager);
+  renderPiecesPage();
 }
-function setMode() { $('mode').textContent = buildMode ? (selected ? 'Building ' + byId[selected].name : 'Build mode') : 'Exploring'; gridHelper.visible = buildMode; }
+function buyOrSelect(p) {
+  if (!isUnlocked(p.id)) {
+    if (state.coins < p.cost) return toast('Need ' + p.cost + ' coins');
+    state.coins -= p.cost; state.unlocked[p.id] = true; updateCoins(); save(); toast(p.name + ' unlocked');
+  }
+  selectPiece(p.id); closePanels();
+}
+function renderPiecesPage() {
+  const grid = $('toolsGrid'), meta = $('toolsMeta'), pager = $('toolsPage');
+  if (!grid) return;
+  const { total, items } = pageTools(toolsCat, toolsQuery, toolsPage, PAGE_SIZE);
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (toolsPage >= pages) { toolsPage = pages - 1; return renderPiecesPage(); }
+  meta.textContent = total.toLocaleString() + ' items · page ' + (toolsPage + 1) + ' of ' + pages;
+  grid.innerHTML = '';
+  items.forEach(p => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'piece' + (selected === p.id ? ' sel' : '');
+    const status = isUnlocked(p.id) ? (p.cost ? 'Unlocked' : 'Free') : (p.cost + ' coins');
+    b.innerHTML = p.name + '<small>' + status + '</small>';
+    b.onclick = () => buyOrSelect(p);
+    grid.appendChild(b);
+  });
+  pager.innerHTML = '';
+  const prev = document.createElement('button'); prev.type = 'button'; prev.className = 'alt'; prev.textContent = 'Previous';
+  prev.disabled = toolsPage <= 0; prev.onclick = () => { toolsPage -= 1; renderPiecesPage(); };
+  const next = document.createElement('button'); next.type = 'button'; next.textContent = 'Next';
+  next.disabled = toolsPage >= pages - 1; next.onclick = () => { toolsPage += 1; renderPiecesPage(); };
+  pager.appendChild(prev); pager.appendChild(next);
+}
+function setMode() { const it = selected && getItem(selected); $('mode').textContent = buildMode ? (it ? 'Building ' + it.name : 'Build mode') : 'Exploring'; gridHelper.visible = buildMode; }
 function selectPiece(id) {
   selected = id; if (id === 'Poster') variant = variant % 5 + 1;
   if (ghost) { unregister(ghost); scene.remove(ghost); }
@@ -495,7 +597,7 @@ function place() {
   if (placed.length >= CFG.maxPieces) return toast('Your park is full');
   if (overlaps(selected, x, z, rot)) return toast('Something is already there');
   const d = { id: selected, x, z, r: rot, v: variant };
-  state.pieces.push(d); addPlaced(d); save(); toast(byId[selected].name + ' placed');
+  state.pieces.push(d); addPlaced(d); save(); toast((getItem(selected) || { name: 'Item' }).name + ' placed');
   if (selected === 'Poster') selectPiece('Poster');
 }
 function del() {
@@ -505,7 +607,7 @@ function del() {
   if (!best) return toast('Stand next to a piece in your park to delete it');
   unregister(best.group); scene.remove(best.group);
   placed.splice(placed.indexOf(best), 1); state.pieces.splice(state.pieces.indexOf(best.data), 1); save();
-  toast(byId[best.data.id].name + ' removed');
+  toast((getItem(best.data.id) || { name: 'Item' }).name + ' removed');
 }
 function goPark() { player.position.set(PLOT.x, 0, PLOT.z - h + 6); player.rotation.y = Math.PI; camYaw = Math.PI; vel.set(0, 0, 0); }
 function done() { buildMode = false; selected = null; if (ghost) { unregister(ghost); scene.remove(ghost); ghost = null; } closePanels(); setMode(); }
@@ -519,14 +621,35 @@ $('bMusic').onclick = () => toggle('music', () => {
   TRACKS.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t.name; b.onclick = () => { playTrack(i); closePanels(); }; el.appendChild(b); });
   const s = document.createElement('button'); s.className = 'alt'; s.textContent = 'Stop'; s.onclick = () => { stopMusic(); closePanels(); }; el.appendChild(s);
 });
-$('bOutfit').onclick = () => toggle('outfits', () => {
-  const el = $('outfits'); el.innerHTML = '<h3>Outfits</h3>';
-  OUTFITS.forEach((o, i) => { const b = document.createElement('button'); b.textContent = o.name; b.style.background = '#' + o.top.toString(16).padStart(6, '0'); b.style.color = i === 3 || i === 2 ? '#784b32' : '#fff'; b.onclick = () => { state.outfit = i; setOutfit(player, o); save(); closePanels(); toast(o.name + ' on'); }; el.appendChild(b); });
+$('bOutfit').onclick = () => toggle('look', () => {
+  const el = $('look'); el.innerHTML = '<h3>Your look</h3>';
+  const box = document.createElement('div'); box.id = 'lookEditor'; el.appendChild(box);
+  const ed = fillCreator(box, { look: playerLook, onChange({ look }) { playerLook = look; saveLook(look); player.userData.char.setLook(look); if (net) net.updateLook(look, playerName); } });
 });
 $('bPark').onclick = () => { closePanels(); goPark(); toast('Welcome to your park'); };
 setupShop({ state, save, updateCoins, toast, toggle, $ });
 $('bDone').onclick = done;
-$('play').onclick = () => { $('start').style.display = 'none'; if (state.track >= 0) playTrack(state.track); };
+let net = null, selfAnim = 'idle';
+function netState() { return { x: player.position.x, y: player.position.y, z: player.position.z, r: player.rotation.y, a: selfAnim }; }
+$('play').onclick = () => {
+  const typed = sanitizeName(($('playerName') && $('playerName').value) || '') || 'Player';
+  playerName = typed; saveName(playerName); saveLook(playerLook);
+  player.userData.char.setLook(playerLook); player.userData.char.setName(playerName);
+  $('start').style.display = 'none';
+  if (state.track >= 0) playTrack(state.track);
+  net = connectPark({
+    name: playerName,
+    look: playerLook,
+    getState: netState,
+    onHello(m) { (m.players || []).forEach(upsertPeer); },
+    onJoin: upsertPeer,
+    onMove: upsertPeer,
+    onLook: upsertPeer,
+    onLeave(m) { removePeer(m.id); },
+    onStatus(s) { if (s === 'full') toast('The park is full right now'); },
+  });
+};
+
 
 // ---------- input ----------
 const keys = {};
@@ -573,10 +696,10 @@ $('jump').addEventListener('pointerdown', e => { e.preventDefault(); jumpQueued 
 
 // ---------- coins tick ----------
 setInterval(() => {
-  const visitors = npcs.filter(n => n.inPark).length;
+  const visitors = [...peers.values()].filter(p => insidePlot(p.root.position)).length;
   const gain = CFG.coinsPerTick + visitors * CFG.visitorBonus;
   state.coins += gain; updateCoins(); save();
-  toast(visitors ? `+${gain} coins (${visitors} visitors in your park)` : `+${gain} coins`);
+  toast(visitors ? `+${gain} coins (${visitors} players in your park)` : `+${gain} coins`);
 }, CFG.tickSeconds * 1000);
 addEventListener('beforeunload', save);
 
@@ -603,8 +726,8 @@ function frame() {
   vel.y -= 50 * dt; player.position.y += vel.y * dt;
   if (player.position.y <= 0) { player.position.y = 0; vel.y = 0; onGround = true; }
   player.position.x = Math.max(-280, Math.min(280, player.position.x)); player.position.z = Math.max(-280, Math.min(280, player.position.z));
-  animateWalk(player, onGround ? ml * sp : 0, T);
-  if (!onGround) { const p = player.userData.parts; p.la.rotation.x = p.ra.rotation.x = -2.6; }
+  selfAnim = !onGround ? 'jump' : (ml * sp > 1 ? 'walk' : 'idle');
+  tickChar(player, onGround ? ml * sp : 0, T, !onGround);
   // camera
   const target = player.position.clone().add(new THREE.Vector3(0, 4, 0));
   camera.position.set(target.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist, target.y + Math.sin(camPitch) * camDist, target.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist);
@@ -629,11 +752,16 @@ function frame() {
     const a = coasterPoint(t), b = coasterPoint((t + 0.01) % 1);
     c.obj.position.set(a.x, a.y + 1.2, a.z); c.obj.lookAt(b.x, b.y + 1.2, b.z);
   }
-  for (const n of npcs) stepNpc(n, dt, T);
+  stepPeers(dt, T);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 setMode();
+if ($('creator')) {
+  const ed = fillCreator($('creator'), { look: playerLook, onChange({ look }) { playerLook = look; saveLook(look); player.userData.char.setLook(look); } });
+  if ($('playerName')) $('playerName').value = loadName();
+}
 frame();
+
 window.__setGhost = (x, z) => { ghostPos.set(PLOT.x + x, 0, PLOT.z + z); snapGhost(); };
-window.__game = { state, placed, npcs, place, selectPiece, goPark };
+window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, get playerLook() { return playerLook; }, get playerName() { return playerName; } };

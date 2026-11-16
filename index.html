@@ -33,9 +33,9 @@ body.touch #joy,body.touch #jump{display:block}
 #help{position:fixed;top:64px;right:8px;font-size:12px;background:#0006;padding:6px 10px;border-radius:10px;line-height:1.4}
 body.touch #help{display:none}
 @media (max-width:700px){.panel{bottom:calc(96px + var(--foot,0px))}.pill{font-size:13px;padding:5px 9px;white-space:nowrap}#now{max-width:40vw;overflow:hidden;text-overflow:ellipsis}#top img{height:38px}#bar button{padding:7px 8px;font-size:13px}#jump{bottom:calc(150px + var(--foot,0px))}#joy{bottom:calc(130px + var(--foot,0px))}}
-#start{position:fixed;top:0;left:0;right:0;bottom:var(--foot,0px);background:radial-gradient(#ff8cc8,#9646dc);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:9;text-align:center;padding:20px}
-#start img{width:min(260px,60vw)}
-#start h1{margin:0;font-size:34px;text-shadow:0 3px 0 #9646dc}
+#start{position:fixed;top:0;left:0;right:0;bottom:var(--foot,0px);background:radial-gradient(#ff8cc8,#9646dc);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;z-index:9;text-align:center;padding:12px 12px 20px;overflow-y:auto;touch-action:auto;user-select:auto;-webkit-user-select:auto}
+#start img{width:min(120px,36vw)}
+#start h1{margin:0;font-size:26px;text-shadow:0 3px 0 #9646dc}
 #start button{font-size:22px;padding:14px 28px}
 
 #coins{pointer-events:auto;cursor:pointer}
@@ -54,19 +54,60 @@ body.touch #help{display:none}
 #cbfoot p:last-child{margin:0}
 #cbfoot a{color:#fff}
 #cbfoot,#cbfoot *{touch-action:auto;user-select:text;-webkit-user-select:text}
+
+#start,#start *{touch-action:auto}
+#start h1{font-size:28px}
+#pieces{flex-direction:column;align-items:stretch;gap:8px;min-width:min(440px,94vw);text-align:left;pointer-events:auto;touch-action:auto;max-height:58vh}
+#pieces,#pieces *,#look,#look *,#creator,#creator *,.name-lab,input{touch-action:auto;user-select:text;-webkit-user-select:text}
+#pieces .tabs{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}
+#pieces .tabs button,#pieces .tab{padding:6px 8px;font-size:12px}
+#pieces input,#look input,.name-lab input{width:100%;min-width:0;font:16px "Trebuchet MS",Arial,sans-serif;border:2px solid #ff8cc8;border-radius:12px;padding:8px 10px;background:#fff;color:#2a1640}
+.tools-meta{margin:0;font-weight:normal;font-size:12px;color:#ffd6ee;text-align:center}
+.tools-grid{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.tools-page{display:flex;justify-content:center;gap:8px}
+#look{flex-direction:column;align-items:stretch;gap:8px;min-width:min(440px,94vw);max-height:58vh;text-align:left}
+.creator{width:min(640px,96vw)}
+.cr-wrap{display:flex;gap:10px;align-items:stretch;text-align:left}
+.cr-prev{flex:0 0 140px;background:#2a1640aa;border:2px solid #ff8cc8;border-radius:14px;display:flex;align-items:flex-end;justify-content:center;min-height:220px}
+#lookPreview{width:140px;height:280px}
+.cr-ctrl{flex:1;min-width:0}
+.cr-tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.cr-tab,.cr-opt{font:bold 12px "Trebuchet MS",Arial;padding:6px 8px}
+.cr-body{max-height:38vh;overflow:auto}
+.cr-row{margin:0 0 8px}
+.cr-lab{font-size:12px;margin:0 0 4px;color:#ffd6ee}
+.cr-opts{display:flex;flex-wrap:wrap;gap:4px}
+.cr-opt{display:inline-flex;align-items:center;gap:4px;background:#9646dc}
+.cr-opt.on,.cr-tab.on{background:#fff;color:#ff3caa}
+.sw{width:14px;height:14px;border-radius:50%;border:1px solid #fff;display:inline-block}
+.name-lab{display:flex;align-items:center;gap:8px;font-weight:bold;width:min(440px,96vw)}
+.name-lab input{flex:1}
+#start .join{position:sticky;bottom:0;width:min(460px,96vw);display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0 4px;background:linear-gradient(transparent,#8a3cc8 28%)}
+#look .creator{width:100%}
+#look #lookPreview{width:110px;height:220px}
+#look .cr-prev{flex-basis:110px;min-height:180px}
+#look .cr-body{max-height:28vh}
+@media (max-width:700px){
+  .cr-wrap{flex-direction:column;align-items:center}
+  #lookPreview{width:110px;height:220px}
+  .cr-prev{min-height:180px}
+  .cr-body{max-height:30vh}
+  #start h1{font-size:24px}
+}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 </head><body>
-<div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your own pink music park with speakers and rides</div><button id="play">Play</button></div>
+<div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your character, then build your pink music park</div><div id="creator"></div><div class="join"><label class="name-lab">Name <input id="playerName" maxlength="16" autocomplete="nickname" spellcheck="false"></label><button id="play">Play</button></div></div>
 <div id="top"><img src="assets/logo.png" alt="Coffeebreak"><span class="pill" id="coins">100 coins</span><span class="pill" id="mode">Exploring</span><span class="pill" id="now" style="display:none"></span></div>
 <div id="help">WASD or arrows to walk, Space to jump<br>Drag to look around, wheel to zoom<br>In build mode click the ground to move the piece, R rotates, Enter places</div>
 <div id="msg"></div>
 <div id="pieces" class="panel"></div>
 <div id="music" class="panel"></div>
 <div id="outfits" class="panel"></div>
+<div id="look" class="panel"></div>
 <div id="shop" class="panel"></div>
 <div id="bar">
-<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bOutfit" class="alt">Outfit</button><button id="bShop">Buy coins</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
+<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bOutfit" class="alt">Look</button><button id="bShop">Buy coins</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
 </div>
 <div id="joy"><div id="knob"></div></div><button id="jump">Jump</button>
 

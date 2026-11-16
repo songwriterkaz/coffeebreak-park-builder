@@ -1,0 +1,15 @@
+{
+  "name": "cb-park",
+  "main": "worker.js",
+  "compatibility_date": "2025-10-01",
+  "account_id": "929bab53a989dfb8d8c987cb17ceb4dc",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOM", "class_name": "ParkRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ParkRoom"] }
+  ]
+}
