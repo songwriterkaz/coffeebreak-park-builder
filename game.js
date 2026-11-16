@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setupShop } from './shop.js';
 
 // ---------- settings (same as the Roblox Config) ----------
 const CFG = { plotSize: 96, grid: 4, maxPieces: 150, startCoins: 100, coinsPerTick: 5, visitorBonus: 3, tickSeconds: 10 };
@@ -523,6 +524,7 @@ $('bOutfit').onclick = () => toggle('outfits', () => {
   OUTFITS.forEach((o, i) => { const b = document.createElement('button'); b.textContent = o.name; b.style.background = '#' + o.top.toString(16).padStart(6, '0'); b.style.color = i === 3 || i === 2 ? '#784b32' : '#fff'; b.onclick = () => { state.outfit = i; setOutfit(player, o); save(); closePanels(); toast(o.name + ' on'); }; el.appendChild(b); });
 });
 $('bPark').onclick = () => { closePanels(); goPark(); toast('Welcome to your park'); };
+setupShop({ state, save, updateCoins, toast, toggle, $ });
 $('bDone').onclick = done;
 $('play').onclick = () => { $('start').style.display = 'none'; if (state.track >= 0) playTrack(state.track); };
 
