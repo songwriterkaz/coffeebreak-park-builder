@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Featured parks</title>
+<link rel="icon" href="assets/icon.png">
+<style>
+body{margin:0;background:#2a1640;color:#fff8fc;font-family:"Trebuchet MS",Arial,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+a{color:#ffc2e4}
+.card{background:#4a206e;border-radius:14px;padding:12px;margin:8px 0}
+button,a.play{display:inline-block;margin-top:8px;background:#ffc2e4;color:#2a1640;font-weight:bold;border:0;border-radius:12px;padding:8px 12px;text-decoration:none}
+footer{margin-top:24px;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<img src="assets/logo.png" alt="Coffeebreak" width="120">
+<h1>Featured parks</h1>
+<p>These parks are chosen by the owner in gallery.json. There is no upload from this page.</p>
+<div id="list">Loading featured parks.</div>
+<p><a class="play" href="./">Back to the park builder</a></p>
+<footer>
+<p>Karen keeps all rights; buyers may resell physical items but not copy them.</p>
+<p>Other brand names are trademarks of their respective owners. Coffeebreak claims no ownership of them, and they are named only to describe the items.</p>
+<p><a href="https://www.tesla.com" target="_blank" rel="noopener">Tesla</a> · <a href="https://www.starlink.com" target="_blank" rel="noopener">Starlink</a> · <a href="https://coffeebreaks.itch.io" target="_blank" rel="noopener">coffeebreaks.itch.io</a></p>
+<p>Coins have no cash value and can't be exchanged for money.</p>
+</footer>
+</main>
+<script>
+fetch('gallery.json').then(function (res) { return res.json(); }).then(function (data) {
+  var list = document.getElementById('list');
+  var parks = data.parks || [];
+  list.textContent = '';
+  if (!parks.length) {
+    list.textContent = 'No featured parks yet.';
+    return;
+  }
+  parks.forEach(function (park) {
+    var card = document.createElement('article');
+    card.className = 'card';
+    var title = document.createElement('h2');
+    title.textContent = (park.name || 'Park') + ' by ' + (park.by || 'Coffeebreak');
+    var link = document.createElement('a');
+    link.className = 'play';
+    link.href = './#p=' + encodeURIComponent(park.code || '');
+    link.textContent = 'Visit in the game';
+    card.append(title, link);
+    list.appendChild(card);
+  });
+}).catch(function () {
+  document.getElementById('list').textContent = 'Featured parks could not be loaded.';
+});
+</script>
+</body>
+</html>

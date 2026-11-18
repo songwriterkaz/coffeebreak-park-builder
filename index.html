@@ -6,26 +6,29 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.png">
 <link rel="apple-touch-icon" href="assets/icon.png">
-<meta name="theme-color" content="#ff3caa">
+<meta name="theme-color" content="#4a206e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;overflow:hidden;background:#2a1640;font-family:"Trebuchet MS",Arial,sans-serif;color:#fff;touch-action:none;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#2a1640;font-family:"Trebuchet MS",Arial,sans-serif;color:#fff8fc;touch-action:none;user-select:none;-webkit-user-select:none}
 canvas{display:block}
 #top{position:fixed;top:8px;left:8px;right:8px;display:flex;align-items:center;gap:8px;pointer-events:none}
 #top img{height:46px;border-radius:10px;background:#fff3;pointer-events:auto}
-.pill{background:#ff3caacc;border:2px solid #fff;border-radius:20px;padding:6px 12px;font-weight:bold;font-size:16px}
-#coins{background:#9646dccc}
+.pill{background:#4a206e;color:#fff8fc;border:2px solid #fff;border-radius:20px;padding:6px 12px;font-weight:bold;font-size:16px}
+#coins{background:#4a206e}
 #msg{position:fixed;top:64px;left:50%;transform:translateX(-50%);background:#000a;padding:8px 14px;border-radius:14px;font-size:15px;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;max-width:90vw}
 #bar{position:fixed;bottom:calc(8px + var(--foot,0px));left:4px;right:4px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:98vw}
-button{font:bold 15px "Trebuchet MS",Arial;color:#fff;background:#ff3caa;border:2px solid #fff;border-radius:14px;padding:9px 13px;cursor:pointer;box-shadow:0 3px 0 #9646dc}
-button.alt{background:#9646dc;box-shadow:0 3px 0 #ff3caa}
+button{font:bold 15px "Trebuchet MS",Arial;color:#2a1640;background:#ffc2e4;border:2px solid #fff;border-radius:14px;padding:9px 13px;cursor:pointer;box-shadow:0 3px 0 #4a206e}
+button.alt{color:#fff8fc;background:#4a206e;box-shadow:0 3px 0 #ffc2e4}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #fff;outline-offset:2px}
 button:disabled{opacity:.45}
 .panel{z-index:5;position:fixed;bottom:calc(70px + var(--foot,0px));left:0;right:0;margin:0 auto;width:fit-content;background:#2a1640ee;border:3px solid #ff8cc8;border-radius:18px;padding:10px;display:none;flex-wrap:wrap;gap:6px;justify-content:center;max-width:94vw;max-height:52vh;overflow:auto}
 .panel.show{display:flex}
 .panel h3{width:100%;margin:2px 0 6px;text-align:center;color:#ff8cc8}
 .piece{min-width:120px}
 .piece small{display:block;font-weight:normal;font-size:12px}
-.piece.sel{background:#fff;color:#ff3caa}
+.piece.sel{background:#fff;color:#2a1640}
 #joy{position:fixed;left:18px;bottom:calc(90px + var(--foot,0px));width:120px;height:120px;border-radius:50%;background:#ffffff22;border:3px solid #ffffff66;display:none}
 #knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:#ff3caacc;border:2px solid #fff}
 #jump{position:fixed;right:22px;bottom:calc(110px + var(--foot,0px));width:80px;height:80px;border-radius:50%;display:none;font-size:16px}
@@ -55,7 +58,7 @@ body.touch #help{display:none}
 #money .pack{width:100%}
 #money .pack.sel{background:#fff;color:#ff3caa}
 #money .pack small{display:block;font-weight:normal;font-size:12px}
-#money a.money-link{display:block;text-align:center;text-decoration:none;font:bold 15px "Trebuchet MS",Arial;color:#fff;background:#ff3caa;border:2px solid #fff;border-radius:14px;padding:9px 13px;box-shadow:0 3px 0 #9646dc}
+#money a.money-link,.money-link{display:block;text-align:center;text-decoration:none;font:bold 15px "Trebuchet MS",Arial;color:#2a1640;background:#ffc2e4;border:2px solid #fff;border-radius:14px;padding:9px 13px;box-shadow:0 3px 0 #4a206e}
 #money,#money *{touch-action:auto;user-select:text;-webkit-user-select:text}
 #cbfoot > div{flex:1;min-width:0}
 #cbfoot button{font-size:12px;padding:6px 10px;flex-shrink:0}
@@ -69,6 +72,17 @@ body.touch #help{display:none}
 
 #start,#start *{touch-action:auto}
 #start h1{font-size:28px}
+#start{padding-top:58px}
+#toolshop,#rewards{flex-direction:column;align-items:stretch;gap:8px;min-width:min(440px,94vw);max-height:62vh;text-align:left;pointer-events:auto;touch-action:auto}
+#toolshop,#rewards,#toolshop *,#rewards *{touch-action:auto;user-select:text;-webkit-user-select:text}
+.shop-filters{display:flex;flex-wrap:wrap;gap:4px}
+.shop-filters select{flex:1;min-width:90px;font:16px "Trebuchet MS",Arial;border:2px solid #ff8cc8;border-radius:12px;padding:8px;background:#fff;color:#2a1640}
+.pass-row,.quest-row{display:flex;justify-content:space-between;gap:6px;align-items:center;background:#0004;border-radius:10px;padding:6px 8px;font-size:13px}
+#eventBanner{position:fixed;top:8px;left:8px;right:8px;z-index:30;background:#4a206e;color:#fff8fc;border:2px solid #fff;border-radius:14px;padding:6px 10px;font-size:13px;text-align:center}
+#eventBanner[hidden]{display:none}
+#payCard[hidden]{display:none}
+body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
 #pieces{flex-direction:column;align-items:stretch;gap:8px;min-width:min(440px,94vw);text-align:left;pointer-events:auto;touch-action:auto;max-height:58vh}
 #pieces,#pieces *,#look,#look *,#creator,#creator *,.name-lab,input{touch-action:auto;user-select:text;-webkit-user-select:text}
 #pieces .tabs{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}
@@ -100,6 +114,7 @@ body.touch #help{display:none}
 #look .cr-prev{flex-basis:110px;min-height:180px}
 #look .cr-body{max-height:28vh}
 @media (max-width:700px){
+  #help{display:none}
   #money{max-height:calc(100vh - 160px - var(--foot,0px))}
   .cr-wrap{flex-direction:column;align-items:center}
   #lookPreview{width:110px;height:220px}
@@ -110,15 +125,18 @@ body.touch #help{display:none}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 </head><body>
-<div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your character, then build your pink music park</div><div id="creator"></div><div class="join"><label class="name-lab">Name <input id="playerName" maxlength="16" autocomplete="nickname" spellcheck="false"></label><button id="play">Play</button></div></div>
-<div id="top"><img src="assets/logo.png" alt="Coffeebreak"><span class="pill" id="coins">100 coins</span><span class="pill" id="mode">Exploring</span><span class="pill" id="now" style="display:none"></span></div>
-<div id="help">WASD or arrows to walk, Space to jump<br>Drag to look around, wheel to zoom<br>In build mode click the ground to move the piece, R rotates, Enter places</div>
+<div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your character, then build your pink music park</div><div>12,000 tools in the Tool Shop</div><p>Coins have no cash value and can't be exchanged for money.</p><div id="creator"></div><div class="join"><label class="name-lab">Name <input id="playerName" maxlength="16" autocomplete="nickname" spellcheck="false"></label><button id="play">Play</button><button id="bInstall" type="button" data-i18n="nav.install">Install app</button></div></div>
+<div id="eventBanner" hidden></div>
+<div id="top"><img src="assets/logo.png" alt="Coffeebreak"><span class="pill" id="coins">100 coins</span><span class="pill" id="tickets">0 tickets</span><span class="pill" id="vipFlag" hidden>Supporter</span><span class="pill" id="mode">Exploring</span><span class="pill" id="now" style="display:none"></span></div>
+<div id="help">WASD or arrows to walk, Space to jump, Escape closes panels<br>Drag to look around, wheel to zoom<br>In build mode click the ground to move the piece, R rotates, Enter places</div>
 <div id="msg"></div>
 <div id="pieces" class="panel"></div>
 <div id="music" class="panel"></div>
 <div id="outfits" class="panel"></div>
 <div id="look" class="panel"></div>
 <div id="shop" class="panel"></div>
+<div id="toolshop" class="panel"></div>
+<div id="rewards" class="panel"></div>
 <div id="money" class="panel" aria-label="Send money">
 <h3>Send money</h3>
 <a id="donateLink" class="money-link" href="https://www.gofundme.com/f/help-our-family-through-multiple-health-crises-advocacy-st" target="_blank" rel="noopener">Donate on GoFundMe</a>
@@ -128,6 +146,7 @@ body.touch #help{display:none}
 <button type="button" class="pack" data-coins="100" data-price="A$1">100 coins<small>A$1</small></button>
 <button type="button" class="pack" data-coins="1200" data-price="A$10">1,200 coins<small>A$10</small></button>
 <button type="button" class="pack" data-coins="6500" data-price="A$50">6,500 coins<small>A$50</small></button>
+<a id="payCard" hidden>Pay by card</a>
 <p id="moneyAmount">Choose a coin pack.</p>
 <p>Reference: <b id="moneyRef"></b></p>
 <div class="row">
@@ -138,7 +157,7 @@ body.touch #help{display:none}
 <p class="note">Coins are credited once the payment is checked and have no cash value.</p>
 </div>
 <div id="bar">
-<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bOutfit" class="alt">Look</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
+<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
 </div>
 <div id="joy"><div id="knob"></div></div><button id="jump">Jump</button>
 
@@ -161,6 +180,10 @@ body.touch #help{display:none}
   if(img){if(img.complete)size();else img.addEventListener("load",size)}
 })();
 </script>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+<script src="payments.config.js"></script>
 <script src="money.js"></script>
 <script type="module" src="game.js"></script>
 <!--cb-game-cart-start--><section id="cb-game-cart" data-store="park-builder" aria-label="Cart"><script type="application/json" id="cb-game-cart-data">{"storeId":"park-builder","currency":"USD","items":[{"id":"full","name":"Coffeebreak Park Builder","amount":"10.00","currency":"USD"}]}</script></section><script src="payid-cart/cart.js"></script><script src="payid-cart/game-cart.js"></script><script src="payid-cart/game-mount.js"></script><!--cb-game-cart-end--></body></html>

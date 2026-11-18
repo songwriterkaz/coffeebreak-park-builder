@@ -1,4 +1,6 @@
 // PayID coin shop and offline redeem-code checks for Park Builder.
+import { classifyCode } from './liveops.js';
+
 const SALT = '7d8b73d384fe30c42d562723a59a2ffb39a90f5431c7b2a945bf8752ff4a5fac';
 const REDEEM_KEY = 'CoffeebreakParkBuilder_redeemed_v1';
 const PACKS = [
@@ -6,8 +8,10 @@ const PACKS = [
   { coins: 6000, aud: 10, label: '6,000 coins', price: 'AUD $10' },
   { coins: 15000, aud: 20, label: '15,000 coins', price: 'AUD $20' },
 ];
+
+export const GIFT_PACKS = [100, 1200, 1000, 6500, 6000, 15000];
 const PACK_BY_COINS = Object.fromEntries(PACKS.map(p => [p.coins, p]));
-const CODE_RE = /^PB-(1000|6000|15000)-([0-9A-F]{8})-([0-9A-F]{8})$/;
+const CODE_RE = new RegExp('^PB-(' + [15000, 6500, 6000, 1200, 1000, 100].join('|') + ')-([0-9A-F]{8})-([0-9A-F]{8})$');
 
 function msg(pack, nonce) {
   return `park-builder:v1:${pack}:${nonce}`;
@@ -72,7 +76,7 @@ function newRef() {
   return s;
 }
 
-export function setupShop({ state, save, updateCoins, toast, toggle, $ }) {
+export function setupShop({ state, save, updateCoins, toast, toggle, $, onOwner, onReferral, onGift }) {
   let checkout = null;
 
   function renderShop() {
@@ -142,6 +146,17 @@ export function setupShop({ state, save, updateCoins, toast, toggle, $ }) {
     const input = $('redeemCode');
     const raw = input ? input.value : '';
     if (!normalizeCode(raw)) return toast('Enter a redeem code first');
+    const kind = classifyCode(raw);
+    if (kind.type === 'owner') {
+      if (onOwner) onOwner();
+      else toast('Owner tools unlocked');
+      return;
+    }
+    if (kind.type === 'referral') {
+      if (onReferral) onReferral(kind.code);
+      else toast('Enter referral codes from Rewards. Gift codes stay here.');
+      return;
+    }
     const result = await checkCode(raw);
     if (!result.ok) {
       if (result.reason === 'used') return toast('That code has already been used');
@@ -152,6 +167,7 @@ export function setupShop({ state, save, updateCoins, toast, toggle, $ }) {
     state.coins += result.coins;
     updateCoins();
     save();
+    if (onGift) onGift(result);
     if (input) input.value = '';
     const pack = PACK_BY_COINS[result.coins];
     toast('Added ' + (pack ? pack.label : result.coins + ' coins'));

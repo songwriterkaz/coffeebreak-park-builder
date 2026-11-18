@@ -1,1 +1,16 @@
-{"name":"Coffeebreak Park Builder","short_name":"Park Builder","start_url":".","display":"fullscreen","background_color":"#ff8cc8","theme_color":"#ff3caa","icons":[{"src":"assets/icon.png","sizes":"192x192","type":"image/png"}]}
+{
+  "id": ".",
+  "name": "Coffeebreak Park Builder",
+  "short_name": "Park Builder",
+  "description": "Build a pink music park with 12,000 tools.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#2a1640",
+  "theme_color": "#4a206e",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "assets/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

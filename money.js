@@ -122,6 +122,7 @@
       if (!pack) return;
       selected = pack;
       reference = refFor(pack.coins);
+      try { document.dispatchEvent(new CustomEvent('park-purchase-start', { detail: { coins: pack.coins } })); } catch (e) {}
       panel.querySelectorAll('.pack').forEach(function (el) {
         el.classList.toggle('sel', el === button);
       });
@@ -155,6 +156,27 @@
       button.setAttribute('aria-expanded', 'false');
       button.addEventListener('click', toggle);
     });
+    var card = document.getElementById('payCard');
+    var link = cardLink();
+    if (card) {
+      if (link) {
+        card.hidden = false;
+        card.href = link;
+      } else {
+        card.hidden = true;
+        card.removeAttribute('href');
+      }
+    }
+  }
+
+  function cardLink(url) {
+    if (url == null) {
+      var cfg = typeof window !== 'undefined' && window.PARK_PAYMENTS ? window.PARK_PAYMENTS : {};
+      url = cfg.stripePaymentLink || '';
+    }
+    url = String(url || '').trim();
+    if (!/^https:\/\//i.test(url)) return '';
+    return url;
   }
 
   return {
@@ -167,6 +189,7 @@
     mintReference: mintReference,
     refFor: refFor,
     copyFields: copyFields,
+    cardLink: cardLink,
     mount: mount
   };
 });

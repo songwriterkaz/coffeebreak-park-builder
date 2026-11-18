@@ -3,6 +3,16 @@ import { setupShop } from './shop.js';
 import { TOOL_COUNT, CATS, itemAt, getItem, pageTools, PAGE_SIZE } from './tools.js';
 import { loadLook, saveLook, loadName, saveName, sanitizeName, drawCharacter, defaultLook, fillCreator, clampLook } from './character.js';
 import { connectPark } from './net.js';
+import { mountToolShop } from './toolshop.js';
+import { mountRewards } from './rewards.js';
+import {
+  ensureOps, accrueTickets, grantXp, addStat, XP_PLACE, XP_VISITOR, parkRating, recordScore,
+  noteGiftCredit, applyOwner, enterReferral, encodePark, decodePark, parkUrl, codeFromUrl,
+  likePark,   countSession, countPurchase as countPurchaseStat, eventState, dayKey, weekKey, noteWeekly,
+} from './liveops.js';
+import {
+  applyI18n, canRemind as remindReady, markReminded, billionaireChoice, weeklyTheme, SHARE_TAG, CACHE_VERSION,
+} from './platform.js';
 
 // ---------- settings (same as the Roblox Config) ----------
 const CFG = { plotSize: 96, grid: 4, maxPieces: 150, startCoins: 100, coinsPerTick: 5, visitorBonus: 3, tickSeconds: 10 };
@@ -29,10 +39,16 @@ try { loaded = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e)
 let state = { coins: CFG.startCoins, unlocked: {}, pieces: [], track: 0, outfit: 0, musicOn: true };
 if (loaded && typeof loaded === 'object') state = Object.assign(state, loaded);
 if (!Array.isArray(state.pieces)) state.pieces = [];
+if (!state.unlocked || typeof state.unlocked !== 'object') state.unlocked = {};
 if (!loaded || typeof loaded.musicOn !== 'boolean') state.musicOn = Number(loaded && loaded.track) !== -1;
 if (!Number.isInteger(state.track) || state.track < 0 || state.track >= TRACKS.length) state.track = 0;
+ensureOps(state);
+accrueTickets(state.ops, state.pieces, getItem, Date.now());
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {} }
-const isUnlocked = id => { const it = getItem(id); return it && (it.cost <= 0 || state.unlocked[id]); };
+const isUnlocked = id => { const it = getItem(id); return !!it && (it.cost <= 0 || !!state.unlocked[id]); };
+let visiting = false;
+let deferredInstall = null;
+let motionOn = true;
 
 // ---------- renderer ----------
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -550,6 +566,25 @@ function playTrack(i) {
     else show();
   } catch (e) {}
 }
+function playUrl(url, name) {
+  state.musicOn = true;
+  save();
+  paintMusicToggle();
+  try {
+    ensureAudio();
+    if (actx && actx.state === 'suspended') actx.resume();
+    audio.src = new URL(url, window.location.href).href;
+    const show = () => {
+      const now = $('now');
+      if (!now) return;
+      now.style.display = '';
+      now.textContent = 'Playing ' + name;
+    };
+    const pending = audio.play();
+    if (pending && pending.then) pending.then(show).catch(() => {});
+    else show();
+  } catch (e) {}
+}
 function stopMusic() {
   state.musicOn = false;
   if (audio) audio.pause();
@@ -577,7 +612,39 @@ function onMusicGesture(e) {
 const $ = id => document.getElementById(id);
 let toastT;
 function toast(s) { const m = $('msg'); m.textContent = s; m.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => m.style.opacity = 0, 2200); }
-function updateCoins() { $('coins').textContent = state.coins + ' coins'; }
+function updateCoins() {
+  $('coins').textContent = state.coins + ' coins';
+  const tickets = $('tickets');
+  if (tickets) tickets.textContent = (state.ops.tickets || 0) + ' tickets';
+  const vip = $('vipFlag');
+  if (vip) vip.hidden = !state.ops.vip;
+}
+function paintBanner() {
+  const el = $('eventBanner');
+  if (!el) return;
+  const status = eventState(new Date());
+  if (status.phase === 'after') { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = status.phase === 'before'
+    ? 'Christmas 2026 starts in ' + status.days + ' days'
+    : 'Christmas 2026 is on. ' + status.days + ' days left.';
+}
+function applyMotion() {
+  motionOn = !state.ops.reduceMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.body.classList.toggle('reduce-motion', !motionOn);
+}
+function openMoney(coins) {
+  const panel = $('money');
+  if (!panel) return;
+  closePanels();
+  panel.classList.add('show');
+  const trigger = $('bMoney');
+  if (trigger) trigger.setAttribute('aria-expanded', 'true');
+  if (coins) {
+    const pack = panel.querySelector('.pack[data-coins="' + coins + '"]');
+    if (pack) pack.click();
+  }
+}
 updateCoins();
 function closePanels() {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('show'));
@@ -592,7 +659,7 @@ let toolsCat = 'all', toolsQuery = '', toolsPage = 0;
 function renderPieces() {
   const el = $('pieces');
   el.innerHTML = '';
-  const h = document.createElement('h3'); h.textContent = 'Build / Tools'; el.appendChild(h);
+  const h = document.createElement('h3'); h.textContent = 'Build'; el.appendChild(h);
   const tabs = document.createElement('div'); tabs.className = 'tabs';
   CATS.forEach(c => {
     const b = document.createElement('button');
@@ -613,19 +680,16 @@ function renderPieces() {
   renderPiecesPage();
 }
 function buyOrSelect(p) {
-  if (!isUnlocked(p.id)) {
-    if (state.coins < p.cost) return toast('Need ' + p.cost + ' coins');
-    state.coins -= p.cost; state.unlocked[p.id] = true; updateCoins(); save(); toast(p.name + ' unlocked');
-  }
+  if (!isUnlocked(p.id)) return toast('Buy this tool in the Tool Shop');
   selectPiece(p.id); closePanels();
 }
 function renderPiecesPage() {
   const grid = $('toolsGrid'), meta = $('toolsMeta'), pager = $('toolsPage');
   if (!grid) return;
-  const { total, items } = pageTools(toolsCat, toolsQuery, toolsPage, PAGE_SIZE);
+  const { total, items } = pageTools(toolsCat, toolsQuery, toolsPage, PAGE_SIZE, { own: 'owned', isOwned: (id) => isUnlocked(id) });
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (toolsPage >= pages) { toolsPage = pages - 1; return renderPiecesPage(); }
-  meta.textContent = total.toLocaleString() + ' items · page ' + (toolsPage + 1) + ' of ' + pages;
+  meta.textContent = 'Owned tools ' + total.toLocaleString() + '. Page ' + (toolsPage + 1) + ' of ' + pages;
   grid.innerHTML = '';
   items.forEach(p => {
     const b = document.createElement('button');
@@ -674,15 +738,25 @@ function placeGhostInFront() {
   ghostPos.copy(player.position).addScaledVector(f, 14); snapGhost();
 }
 function place() {
+  if (visiting) return toast('Return to your park to build');
   if (!buildMode || !selected) return toast('Press Build and pick a piece first');
+  if (!isUnlocked(selected)) return toast('Buy this tool in the Tool Shop');
   const x = ghost.userData.lx, z = ghost.userData.lz;
   if (placed.length >= CFG.maxPieces) return toast('Your park is full');
   if (overlaps(selected, x, z, rot)) return toast('Something is already there');
   const d = { id: selected, x, z, r: rot, v: variant };
-  state.pieces.push(d); addPlaced(d); save(); toast((getItem(selected) || { name: 'Item' }).name + ' placed');
+  state.pieces.push(d); addPlaced(d);
+  const item = getItem(selected);
+  grantXp(state.ops, XP_PLACE);
+  addStat(state.ops, 'place', 1);
+  if (item && item.cat === 'event') addStat(state.ops, 'xmas', 1);
+  noteWeekly(state.ops, weekKey(new Date()), weeklyTheme(weekKey(new Date())), item);
+  state.ops.rating = parkRating(state.pieces, getItem);
+  save(); toast((item || { name: 'Item' }).name + ' placed');
   if (selected === 'Poster') selectPiece('Poster');
 }
 function del() {
+  if (visiting) return toast('Return to your park to build');
   const ref = buildMode && ghost ? ghost.position : player.position;
   let best = null, bd = 16;
   for (const p of placed) { const dd = p.group.position.distanceTo(ref); if (dd < bd) { bd = dd; best = p; } }
@@ -701,6 +775,24 @@ $('bDelete').onclick = del;
 $('bMusic').onclick = () => toggle('music', () => {
   const el = $('music'); el.innerHTML = '<h3>Coffeebreak music</h3>';
   TRACKS.forEach((t, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t.name; b.onclick = () => { playTrack(i); closePanels(); }; el.appendChild(b); });
+  fetch('tracks/billionaire.mp3', { method: 'HEAD' }).then((res) => {
+    const choice = billionaireChoice(!!(res && res.ok));
+    if (choice.file) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Billionaire';
+      b.onclick = () => { playUrl(choice.file, 'Billionaire'); closePanels(); };
+      el.appendChild(b);
+    } else {
+      const a = document.createElement('a');
+      a.href = choice.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = 'money-link';
+      a.textContent = 'Billionaire on Apple Music';
+      el.appendChild(a);
+    }
+  }).catch(() => {});
   const s = document.createElement('button');
   s.type = 'button'; s.className = 'alt'; s.id = 'bMusicPanelToggle'; s.dataset.musicToggle = '1';
   s.onclick = () => { toggleMusic(); };
@@ -717,7 +809,178 @@ $('bOutfit').onclick = () => toggle('look', () => {
   const ed = fillCreator(box, { look: playerLook, onChange({ look }) { playerLook = look; saveLook(look); player.userData.char.setLook(look); if (net) net.updateLook(look, playerName); } });
 });
 $('bPark').onclick = () => { closePanels(); goPark(); toast('Welcome to your park'); };
-setupShop({ state, save, updateCoins, toast, toggle, $ });
+function syncOwned() { state.ops.stats.owned = Object.keys(state.unlocked).length; }
+function addCoins(n) { state.coins += n; updateCoins(); save(); }
+function spendCoins(n) { state.coins = Math.max(0, state.coins - n); updateCoins(); save(); }
+function unlock(id) { state.unlocked[id] = true; syncOwned(); }
+function clearRendered() {
+  for (const p of placed) { unregister(p.group); scene.remove(p.group); }
+  placed.length = 0;
+}
+function beginVisit(pieces) {
+  visiting = true;
+  clearRendered();
+  (pieces || []).forEach(addPlaced);
+  goPark();
+}
+function endVisit() {
+  if (!visiting) return;
+  visiting = false;
+  clearRendered();
+  state.pieces.filter(d => getItem(d.id)).forEach(addPlaced);
+  toast('Back in your park');
+}
+function currentParkUrl() {
+  const code = encodePark(state.pieces);
+  return { code, url: parkUrl(location.href, code) };
+}
+async function copyText(value) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(value);
+    else throw new Error('copy');
+    toast('Copied');
+  } catch (e) {
+    toast(value.slice(0, 80));
+  }
+}
+function sharePark() {
+  const pack = currentParkUrl();
+  addStat(state.ops, 'share', 1);
+  save();
+  const text = 'Visit my Coffeebreak park ' + pack.url + ' ' + SHARE_TAG;
+  if (navigator.share) {
+    navigator.share({ title: 'Coffeebreak Park Builder', text, url: pack.url }).catch(() => copyText(pack.url));
+    return;
+  }
+  copyText(pack.url);
+}
+function copyPark() { copyText(currentParkUrl().url); }
+function submitGallery() {
+  const pack = currentParkUrl();
+  copyText('Park code for the Coffeebreak gallery: ' + pack.code);
+}
+function visitCode(code) {
+  const pieces = decodePark(code, getItem);
+  if (!pieces.length) return toast('That park code could not be read');
+  beginVisit(pieces);
+  addStat(state.ops, 'visit', 1);
+  state.ops.visitCode = code;
+  save();
+  closePanels();
+  toast('Visiting a shared park');
+}
+function likeVisit() {
+  if (!state.ops.visitCode) return toast('Open a shared park first');
+  likePark(state.ops, state.ops.visitCode);
+  save();
+  toast('Liked on this device');
+}
+async function shareBlob(blob, name) {
+  const text = 'My Coffeebreak park ' + SHARE_TAG;
+  const file = new File([blob], name, { type: blob.type || 'image/png' });
+  const payload = { text, files: [file] };
+  if (navigator.canShare && navigator.canShare(payload)) {
+    try { await navigator.share(payload); return; } catch (e) {}
+  }
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = name;
+  link.click();
+  toast('Saved ' + name + '. Post it with ' + SHARE_TAG);
+}
+function shareShot() {
+  const canvas = renderer.domElement;
+  if (!canvas.toBlob) return toast('Screenshot is not available here');
+  canvas.toBlob((blob) => { if (blob) shareBlob(blob, 'coffeebreak-park.png'); }, 'image/png');
+}
+function recordClip() {
+  const canvas = renderer.domElement;
+  if (!canvas.captureStream || typeof MediaRecorder === 'undefined') return shareShot();
+  let recorder;
+  try {
+    const stream = canvas.captureStream(24);
+    recorder = new MediaRecorder(stream);
+  } catch (e) { return shareShot(); }
+  const chunks = [];
+  recorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+    shareBlob(blob, 'coffeebreak-park.webm');
+  };
+  recorder.start();
+  toast('Recording 8 seconds');
+  setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 8000);
+}
+function enableReminders() {
+  if (typeof Notification === 'undefined') return toast('This browser has no notification support');
+  Notification.requestPermission().then((permission) => {
+    if (permission !== 'granted') return toast('Notifications stay off');
+    state.ops.notifyDaily = true;
+    save();
+    toast('Daily reward reminders are on');
+  });
+}
+function maybeRemind() {
+  if (typeof Notification === 'undefined') return;
+  const today = dayKey(new Date());
+  if (!remindReady(state.ops, today, Notification.permission)) return;
+  try {
+    new Notification('Coffeebreak Park Builder', { body: 'Daily rewards are ready. Coins have no cash value.' });
+    markReminded(state.ops, today);
+    save();
+  } catch (e) {}
+}
+function installApp() {
+  if (deferredInstall) {
+    deferredInstall.prompt();
+    deferredInstall.userChoice.then(() => { deferredInstall = null; });
+    return;
+  }
+  toast('Use the browser menu to install this app');
+}
+function applyLang() {
+  document.documentElement.lang = state.ops.lang || 'en';
+  applyI18n(document, state.ops.lang || 'en');
+}
+const liveCtx = {
+  $, state, save, toast, toggle, closePanels, isUnlocked, selectPiece, getItem,
+  openMoney, addCoins, spendCoins, unlock, sharePark, copyPark, submitGallery, visitCode,
+  likeVisit, endVisit, recordClip, shareShot, enableReminders, installApp, applyMotion,
+  visiting: () => visiting,
+  eventLive: () => eventState(new Date()).phase === 'live',
+  countPurchase: () => countPurchaseStat(state.ops),
+  countTools: (n) => { state.ops.analytics.toolsBought += n || 1; },
+  addStat: (stat, n) => addStat(state.ops, stat, n),
+  refresh: () => { syncOwned(); updateCoins(); save(); },
+  applyI18n: applyLang,
+};
+mountToolShop(liveCtx);
+mountRewards(liveCtx);
+setupShop({
+  state, save, updateCoins, toast, toggle, $,
+  onOwner() {
+    const result = applyOwner(state.ops);
+    if (result.coins) state.coins += result.coins;
+    updateCoins();
+    save();
+    toast('Supporter badge on. Stats are open.');
+  },
+  onReferral(code) {
+    const result = enterReferral(state.ops, code);
+    if (!result.ok && result.reason === 'self') return toast('That is your own code');
+    if (!result.ok && result.reason === 'used') return toast('A referral code is already entered');
+    if (!result.ok) return toast('That referral code is not valid');
+    save();
+    toast('Referral stored as pending verification');
+  },
+  onGift(result) {
+    const starter = noteGiftCredit(state.ops, result.coins);
+    if (!starter.starter) return;
+    starter.tools.forEach(unlock);
+    save();
+    toast('Starter tools unlocked');
+  },
+});
 $('bDone').onclick = done;
 let net = null, selfAnim = 'idle';
 function netState() { return { x: player.position.x, y: player.position.y, z: player.position.z, r: player.rotation.y, a: selfAnim }; }
@@ -727,6 +990,11 @@ $('play').onclick = () => {
   player.userData.char.setLook(playerLook); player.userData.char.setName(playerName);
   $('start').style.display = 'none';
   if (state.musicOn !== false) playTrack(state.track);
+  countSession(state.ops);
+  save();
+  maybeRemind();
+  const shared = codeFromUrl(location.href);
+  if (shared) visitCode(shared);
   net = connectPark({
     name: playerName,
     look: playerLook,
@@ -745,6 +1013,7 @@ $('play').onclick = () => {
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (e.key === 'Escape') closePanels();
   if (e.code === 'KeyR') { rot = (rot + 1) % 4; snapGhost(); }
   if (e.code === 'Enter') place();
   if (e.code === 'Delete' || e.code === 'Backspace') del();
@@ -788,9 +1057,18 @@ $('jump').addEventListener('pointerdown', e => { e.preventDefault(); jumpQueued 
 setInterval(() => {
   const visitors = [...peers.values()].filter(p => insidePlot(p.root.position)).length;
   const gain = CFG.coinsPerTick + visitors * CFG.visitorBonus;
-  state.coins += gain; updateCoins(); save();
-  toast(visitors ? `+${gain} coins (${visitors} players in your park)` : `+${gain} coins`);
+  state.coins += gain;
+  if (visitors) {
+    addStat(state.ops, 'visitors', visitors);
+    grantXp(state.ops, visitors * XP_VISITOR);
+  }
+  accrueTickets(state.ops, state.pieces, getItem, Date.now());
+  recordScore(state.ops, parkRating(state.pieces, getItem), state.ops.stats.visitors || 0);
+  updateCoins();
+  save();
+  toast(visitors ? '+' + gain + ' coins (' + visitors + ' players in your park)' : '+' + gain + ' coins');
 }, CFG.tickSeconds * 1000);
+document.addEventListener('park-purchase-start', () => { countPurchaseStat(state.ops); save(); });
 addEventListener('beforeunload', save);
 
 // ---------- loop ----------
@@ -823,30 +1101,37 @@ function frame() {
   camera.position.set(target.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist, target.y + Math.sin(camPitch) * camDist, target.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist);
   camera.lookAt(target);
   // plaza
-  logoCube.rotation.y += dt * 0.5; logoCube.position.y = 11 + Math.sin(T * 1.5) * 0.6;
   sign.lookAt(camera.position.x, sign.position.y, camera.position.z);
-  // animations
-  const s = 1 + level * 0.6;
-  for (const m of anim.pulse) m.scale.set(s, 1, s);
-  const hue = (T * 0.15) % 1;
-  anim.cycle.forEach((m, i) => { m.material.color.setHSL((hue + i * 0.07) % 1, 0.9, 0.6); m.material.emissive.copy(m.material.color); });
-  for (const t of anim.tiles) { const on = (Math.floor(T * 4) + t.userData.n * 7) % 3 === 0; t.material.emissive.setHSL(on ? (hue + t.userData.n / 16) % 1 : 0.9, 0.9, on ? 0.55 : 0.2 + level * 0.3); }
-  for (const sp2 of anim.spins) {
-    if (sp2.axis === 'bob') { sp2.obj.position.y = sp2.base + Math.sin(T * sp2.speed + sp2.phase) * 0.8; continue; }
-    if (sp2.mode === 'swing') sp2.obj.rotation[sp2.axis] = Math.sin(T * sp2.speed) * sp2.amp;
-    else sp2.obj.rotation[sp2.axis] += sp2.speed * dt;
-  }
-  for (const u of anim.uprights) u.obj.rotation.z = -u.pivot.rotation.z;
-  for (const c of anim.coasters) {
-    const t = ((T * c.speed + c.offset) % 1 + 1) % 1;
-    const a = coasterPoint(t), b = coasterPoint((t + 0.01) % 1);
-    c.obj.position.set(a.x, a.y + 1.2, a.z); c.obj.lookAt(b.x, b.y + 1.2, b.z);
+  if (motionOn) {
+    logoCube.rotation.y += dt * 0.5; logoCube.position.y = 11 + Math.sin(T * 1.5) * 0.6;
+    const s = 1 + level * 0.6;
+    for (const m of anim.pulse) m.scale.set(s, 1, s);
+    const hue = (T * 0.15) % 1;
+    anim.cycle.forEach((m, i) => { m.material.color.setHSL((hue + i * 0.07) % 1, 0.9, 0.6); m.material.emissive.copy(m.material.color); });
+    for (const t of anim.tiles) { const on = (Math.floor(T * 4) + t.userData.n * 7) % 3 === 0; t.material.emissive.setHSL(on ? (hue + t.userData.n / 16) % 1 : 0.9, 0.9, on ? 0.55 : 0.2 + level * 0.3); }
+    for (const sp2 of anim.spins) {
+      if (sp2.axis === 'bob') { sp2.obj.position.y = sp2.base + Math.sin(T * sp2.speed + sp2.phase) * 0.8; continue; }
+      if (sp2.mode === 'swing') sp2.obj.rotation[sp2.axis] = Math.sin(T * sp2.speed) * sp2.amp;
+      else sp2.obj.rotation[sp2.axis] += sp2.speed * dt;
+    }
+    for (const u of anim.uprights) u.obj.rotation.z = -u.pivot.rotation.z;
+    for (const c of anim.coasters) {
+      const t = ((T * c.speed + c.offset) % 1 + 1) % 1;
+      const a = coasterPoint(t), b = coasterPoint((t + 0.01) % 1);
+      c.obj.position.set(a.x, a.y + 1.2, a.z); c.obj.lookAt(b.x, b.y + 1.2, b.z);
+    }
   }
   stepPeers(dt, T);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 setMode();
+paintBanner();
+applyMotion();
+applyLang();
+if ($('bInstall')) $('bInstall').onclick = () => installApp();
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
+if ('serviceWorker' in navigator && CACHE_VERSION) navigator.serviceWorker.register('sw.js').catch(() => {});
 if ($('creator')) {
   const ed = fillCreator($('creator'), { look: playerLook, onChange({ look }) { playerLook = look; saveLook(look); player.userData.char.setLook(look); } });
   if ($('playerName')) $('playerName').value = loadName();
@@ -854,4 +1139,4 @@ if ($('creator')) {
 frame();
 
 window.__setGhost = (x, z) => { ghostPos.set(PLOT.x + x, 0, PLOT.z + z); snapGhost(); };
-window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };
+window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, updateCoins, openMoney, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };
