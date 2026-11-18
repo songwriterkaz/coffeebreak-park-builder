@@ -24,9 +24,13 @@ const OUTFITS = [
 const SAVE_KEY = 'coffeebreakParkBuilder_v1';
 
 // ---------- state ----------
-let state = { coins: CFG.startCoins, unlocked: {}, pieces: [], track: 0, outfit: 0 };
-try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && typeof s === 'object') state = Object.assign(state, s); } catch (e) {}
+let loaded = null;
+try { loaded = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) {}
+let state = { coins: CFG.startCoins, unlocked: {}, pieces: [], track: 0, outfit: 0, musicOn: true };
+if (loaded && typeof loaded === 'object') state = Object.assign(state, loaded);
 if (!Array.isArray(state.pieces)) state.pieces = [];
+if (!loaded || typeof loaded.musicOn !== 'boolean') state.musicOn = Number(loaded && loaded.track) !== -1;
+if (!Number.isInteger(state.track) || state.track < 0 || state.track >= TRACKS.length) state.track = 0;
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {} }
 const isUnlocked = id => { const it = getItem(id); return it && (it.cost <= 0 || state.unlocked[id]); };
 
@@ -481,21 +485,93 @@ function stepPeers(dt, time) {
 
 // ---------- audio ----------
 let audio = null, analyser = null, actx = null, level = 0, fdata = null;
-function playTrack(i) {
-  state.track = i; save();
+function trackIndex(i) {
+  i = i | 0;
+  if (i < 0 || i >= TRACKS.length) return 0;
+  return i;
+}
+function ensureAudio() {
+  if (audio) return;
+  audio = new Audio();
+  audio.loop = true;
+  audio.preload = 'auto';
+  audio.playsInline = true;
+  audio.setAttribute('playsinline', '');
+  audio.id = 'park-audio';
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
   try {
-    if (!audio) {
-      audio = new Audio(); audio.loop = true; audio.crossOrigin = 'anonymous';
-      actx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = actx.createMediaElementSource(audio); analyser = actx.createAnalyser(); analyser.fftSize = 256;
-      src.connect(analyser); analyser.connect(actx.destination); fdata = new Uint8Array(analyser.frequencyBinCount);
-    }
-    if (actx.state === 'suspended') actx.resume();
-    audio.src = TRACKS[i].file; audio.play().catch(() => {});
-    $('now').style.display = ''; $('now').textContent = 'Playing ' + TRACKS[i].name;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    actx = new Ctx();
+    const src = actx.createMediaElementSource(audio);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    analyser.connect(actx.destination);
+    fdata = new Uint8Array(analyser.frequencyBinCount);
+  } catch (e) {
+    actx = null;
+    analyser = null;
+    fdata = null;
+  }
+}
+function paintMusicToggle() {
+  const on = state.musicOn !== false;
+  const label = on ? 'Music: on' : 'Music: off';
+  for (const id of ['bMusicToggle', 'bMusicPanelToggle']) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.textContent = label;
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+function playTrack(i) {
+  i = trackIndex(i);
+  state.track = i;
+  state.musicOn = true;
+  save();
+  paintMusicToggle();
+  try {
+    ensureAudio();
+    if (actx && actx.state === 'suspended') actx.resume();
+    const url = new URL(TRACKS[i].file, window.location.href).href;
+    const same = audio.src === url;
+    if (!same) audio.src = url;
+    const show = () => {
+      const now = $('now');
+      if (!now) return;
+      now.style.display = '';
+      now.textContent = 'Playing ' + TRACKS[i].name;
+    };
+    if (same && !audio.paused) { show(); return; }
+    const pending = audio.play();
+    if (pending && pending.then) pending.then(show).catch(() => {});
+    else show();
   } catch (e) {}
 }
-function stopMusic() { if (audio) audio.pause(); $('now').style.display = 'none'; state.track = -1; save(); }
+function stopMusic() {
+  state.musicOn = false;
+  if (audio) audio.pause();
+  const now = $('now');
+  if (now) now.style.display = 'none';
+  save();
+  paintMusicToggle();
+}
+function toggleMusic() {
+  if (state.musicOn === false) playTrack(trackIndex(state.track));
+  else stopMusic();
+}
+function onMusicGesture(e) {
+  if (state.musicOn === false) return;
+  const t = e && e.target;
+  if (t && t.closest && t.closest('[data-music-toggle], #music')) return;
+  if (audio && audio.src && !audio.paused) {
+    if (actx && actx.state === 'suspended') actx.resume();
+    return;
+  }
+  playTrack(trackIndex(state.track));
+}
 
 // ---------- UI ----------
 const $ = id => document.getElementById(id);
@@ -503,7 +579,13 @@ let toastT;
 function toast(s) { const m = $('msg'); m.textContent = s; m.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => m.style.opacity = 0, 2200); }
 function updateCoins() { $('coins').textContent = state.coins + ' coins'; }
 updateCoins();
-function closePanels() { document.querySelectorAll('.panel').forEach(p => p.classList.remove('show')); }
+function closePanels() {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('show'));
+  for (const id of ['bMoney', 'bMoneyFoot']) {
+    const b = $(id);
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+}
 let buildMode = false, selected = null, ghost = null, rot = 0, variant = 1;
 const ghostPos = new THREE.Vector3(PLOT.x, 0, PLOT.z);
 let toolsCat = 'all', toolsQuery = '', toolsPage = 0;
@@ -618,9 +700,17 @@ $('bPlace').onclick = place;
 $('bDelete').onclick = del;
 $('bMusic').onclick = () => toggle('music', () => {
   const el = $('music'); el.innerHTML = '<h3>Coffeebreak music</h3>';
-  TRACKS.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t.name; b.onclick = () => { playTrack(i); closePanels(); }; el.appendChild(b); });
-  const s = document.createElement('button'); s.className = 'alt'; s.textContent = 'Stop'; s.onclick = () => { stopMusic(); closePanels(); }; el.appendChild(s);
+  TRACKS.forEach((t, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t.name; b.onclick = () => { playTrack(i); closePanels(); }; el.appendChild(b); });
+  const s = document.createElement('button');
+  s.type = 'button'; s.className = 'alt'; s.id = 'bMusicPanelToggle'; s.dataset.musicToggle = '1';
+  s.onclick = () => { toggleMusic(); };
+  el.appendChild(s);
+  paintMusicToggle();
 });
+$('bMusicToggle').onclick = () => toggleMusic();
+paintMusicToggle();
+addEventListener('pointerdown', onMusicGesture, true);
+addEventListener('touchend', onMusicGesture, true);
 $('bOutfit').onclick = () => toggle('look', () => {
   const el = $('look'); el.innerHTML = '<h3>Your look</h3>';
   const box = document.createElement('div'); box.id = 'lookEditor'; el.appendChild(box);
@@ -636,7 +726,7 @@ $('play').onclick = () => {
   playerName = typed; saveName(playerName); saveLook(playerLook);
   player.userData.char.setLook(playerLook); player.userData.char.setName(playerName);
   $('start').style.display = 'none';
-  if (state.track >= 0) playTrack(state.track);
+  if (state.musicOn !== false) playTrack(state.track);
   net = connectPark({
     name: playerName,
     look: playerLook,
@@ -764,4 +854,4 @@ if ($('creator')) {
 frame();
 
 window.__setGhost = (x, z) => { ghostPos.set(PLOT.x + x, 0, PLOT.z + z); snapGhost(); };
-window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, get playerLook() { return playerLook; }, get playerName() { return playerName; } };
+window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };

@@ -47,6 +47,18 @@ body.touch #help{display:none}
 #shop input{flex:1;min-width:0;font:16px "Trebuchet MS",Arial,sans-serif;border:2px solid #ff8cc8;border-radius:12px;padding:8px 10px;background:#fff;color:#2a1640;user-select:text;-webkit-user-select:text;touch-action:auto}
 #shop .pack{width:100%}
 #shop, #shop *{touch-action:auto}
+#money{z-index:30;flex-direction:column;align-items:stretch;gap:8px;min-width:min(380px,92vw);max-height:calc(100vh - 120px - var(--foot,0px));text-align:left;pointer-events:auto;touch-action:auto;user-select:text;-webkit-user-select:text}
+#money p{margin:0;font-weight:normal;font-size:14px;line-height:1.45}
+#money .note{font-size:12px;color:#ffd6ee}
+#money .pay{background:#0007;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.55}
+#money .row{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+#money .pack{width:100%}
+#money .pack.sel{background:#fff;color:#ff3caa}
+#money .pack small{display:block;font-weight:normal;font-size:12px}
+#money a.money-link{display:block;text-align:center;text-decoration:none;font:bold 15px "Trebuchet MS",Arial;color:#fff;background:#ff3caa;border:2px solid #fff;border-radius:14px;padding:9px 13px;box-shadow:0 3px 0 #9646dc}
+#money,#money *{touch-action:auto;user-select:text;-webkit-user-select:text}
+#cbfoot > div{flex:1;min-width:0}
+#cbfoot button{font-size:12px;padding:6px 10px;flex-shrink:0}
 
 #cbfoot{position:fixed;left:0;right:0;bottom:0;z-index:12;display:flex;align-items:center;gap:8px;background:#2a1640;border-top:2px solid #ff8cc8;padding:6px 10px;color:#ffd6ee;font-size:11px;line-height:1.35;font-weight:normal;pointer-events:auto;touch-action:auto;user-select:text;-webkit-user-select:text}
 #cbfoot img{height:36px;width:auto;border-radius:8px;background:#fff3;flex-shrink:0}
@@ -88,6 +100,7 @@ body.touch #help{display:none}
 #look .cr-prev{flex-basis:110px;min-height:180px}
 #look .cr-body{max-height:28vh}
 @media (max-width:700px){
+  #money{max-height:calc(100vh - 160px - var(--foot,0px))}
   .cr-wrap{flex-direction:column;align-items:center}
   #lookPreview{width:110px;height:220px}
   .cr-prev{min-height:180px}
@@ -106,8 +119,26 @@ body.touch #help{display:none}
 <div id="outfits" class="panel"></div>
 <div id="look" class="panel"></div>
 <div id="shop" class="panel"></div>
+<div id="money" class="panel" aria-label="Send money">
+<h3>Send money</h3>
+<a id="donateLink" class="money-link" href="https://www.gofundme.com/f/help-our-family-through-multiple-health-crises-advocacy-st" target="_blank" rel="noopener">Donate on GoFundMe</a>
+<p class="note">This is a voluntary donation. It does not buy coins or items.</p>
+<h3>Buy coins by PayID</h3>
+<p class="pay" id="payidLabel">Pay by PayID (Teachers Mutual Bank): darkokaz@gmx.com</p>
+<button type="button" class="pack" data-coins="100" data-price="A$1">100 coins<small>A$1</small></button>
+<button type="button" class="pack" data-coins="1200" data-price="A$10">1,200 coins<small>A$10</small></button>
+<button type="button" class="pack" data-coins="6500" data-price="A$50">6,500 coins<small>A$50</small></button>
+<p id="moneyAmount">Choose a coin pack.</p>
+<p>Reference: <b id="moneyRef"></b></p>
+<div class="row">
+<button type="button" id="copyPayId">Copy PayID</button>
+<button type="button" id="copyAmount" disabled>Copy amount</button>
+<button type="button" id="copyRef" disabled>Copy reference</button>
+</div>
+<p class="note">Coins are credited once the payment is checked and have no cash value.</p>
+</div>
 <div id="bar">
-<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bOutfit" class="alt">Look</button><button id="bShop">Buy coins</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
+<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bOutfit" class="alt">Look</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
 </div>
 <div id="joy"><div id="knob"></div></div><button id="jump">Jump</button>
 
@@ -118,6 +149,7 @@ body.touch #help{display:none}
 <p>Other brand names are trademarks of their respective owners. Coffeebreak claims no ownership of them, and they are named only to describe the items.</p>
 <p><a href="https://www.tesla.com" target="_blank" rel="noopener">Tesla</a> · <a href="https://www.starlink.com" target="_blank" rel="noopener">Starlink</a> · <a href="https://coffeebreaks.itch.io" target="_blank" rel="noopener">coffeebreaks.itch.io</a></p>
 </div>
+<button type="button" id="bMoneyFoot">Send money</button>
 </footer>
 <script>
 (function(){
@@ -129,5 +161,6 @@ body.touch #help{display:none}
   if(img){if(img.complete)size();else img.addEventListener("load",size)}
 })();
 </script>
+<script src="money.js"></script>
 <script type="module" src="game.js"></script>
 <!--cb-game-cart-start--><section id="cb-game-cart" data-store="park-builder" aria-label="Cart"><script type="application/json" id="cb-game-cart-data">{"storeId":"park-builder","currency":"USD","items":[{"id":"full","name":"Coffeebreak Park Builder","amount":"10.00","currency":"USD"}]}</script></section><script src="payid-cart/cart.js"></script><script src="payid-cart/game-cart.js"></script><script src="payid-cart/game-mount.js"></script><!--cb-game-cart-end--></body></html>
