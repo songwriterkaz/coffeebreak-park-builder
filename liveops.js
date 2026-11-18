@@ -29,6 +29,9 @@ function fill(ops) {
   if (ops.pendingCoins == null) ops.pendingCoins = 0;
   if (ops.tickets == null) ops.tickets = 0;
   if (ops.lastIncomeAt == null) ops.lastIncomeAt = 0;
+  if (ops.lastVisitorCoinAt == null) ops.lastVisitorCoinAt = 0;
+  if (ops.visitorCoinFrac == null) ops.visitorCoinFrac = 0;
+  if (ops.visitorCoins == null) ops.visitorCoins = 0;
   ops.eventClaimed = ops.eventClaimed || {};
   if (ops.vip !== true) ops.vip = false;
   if (ops.owner !== true) ops.owner = false;
@@ -249,9 +252,8 @@ export function enterReferral(ops, input) {
   if (code === ops.referral.code) return { ok: false, reason: 'self' };
   if (ops.referral.used) return { ok: false, reason: 'used' };
   ops.referral.used = code;
-  ops.referral.pending.push({ code, self: REFERRAL_BONUS, friend: REFERRAL_BONUS, status: 'pending' });
-  ops.pendingCoins += REFERRAL_BONUS;
-  return { ok: true, status: 'pending', pending: REFERRAL_BONUS };
+  ops.referral.pending.push({ code, self: REFERRAL_BONUS, friend: REFERRAL_BONUS, status: 'earned' });
+  return { ok: true, status: 'earned', coins: REFERRAL_BONUS, friend: REFERRAL_BONUS };
 }
 
 export function classifyCode(raw) {
@@ -297,6 +299,21 @@ export function parkRating(pieces, getItem) {
     rating += RARITY_WEIGHT[item.rarity] || 1;
   }
   return rating;
+}
+
+export function accrueVisitorCoins(ops, pieces, getItem, now) {
+  if (!ops.lastVisitorCoinAt) {
+    ops.lastVisitorCoinAt = now;
+    return 0;
+  }
+  const elapsed = Math.max(0, Math.min(INCOME_CAP_MS, now - ops.lastVisitorCoinAt));
+  const rating = parkRating(pieces, getItem);
+  ops.visitorCoinFrac = (ops.visitorCoinFrac || 0) + (rating * elapsed) / 600000;
+  const coins = Math.floor(ops.visitorCoinFrac);
+  ops.visitorCoinFrac -= coins;
+  ops.lastVisitorCoinAt = now;
+  ops.visitorCoins = (ops.visitorCoins || 0) + coins;
+  return coins;
 }
 
 export function accrueTickets(ops, pieces, getItem, now) {

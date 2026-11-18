@@ -1,5 +1,5 @@
 /* Park Builder offline shell. Versioned cache. No in-app purchases. */
-const CACHE = 'park-builder-v3';
+const CACHE = 'park-builder-v4';
 const SHELL = [
   './',
   './index.html',

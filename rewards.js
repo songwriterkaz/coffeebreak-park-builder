@@ -2,7 +2,7 @@
 import {
   DAILY_COINS, SEASON, claimDaily, tierReached, tierReward, claimTier, buyPremium,
   questsFor, claimQuest, ACHIEVEMENTS, claimAchievement, starterOffer, dayKey, weekKey,
-  ensureReferral, enterReferral, eventState, eventQuests, claimWeekly, noteWeekly,
+  ensureReferral, enterReferral, eventState, eventQuests, claimWeekly, noteWeekly, REFERRAL_BONUS,
 } from './liveops.js';
 import {
   t, weeklyTheme, createAdProvider, claimRewardedAd, SHARE_TAG, BILLIONAIRE_URL, billionaireChoice,
@@ -211,13 +211,8 @@ export function mountRewards(ctx) {
     const box = document.createElement('div');
     const code = ensureReferral(ctx.state.ops);
     const mine = document.createElement('p');
-    mine.textContent = 'Your referral code is ' + code + '. Both bonuses stay pending until they are checked.';
+    mine.textContent = 'Your referral code is ' + code + '. You and your friend each earn ' + REFERRAL_BONUS + ' coins. Earned, not bought.';
     box.appendChild(mine);
-    if (ctx.state.ops.pendingCoins) {
-      const pending = document.createElement('p');
-      pending.textContent = 'Pending verification: ' + ctx.state.ops.pendingCoins + ' coins for you and the same for your friend.';
-      box.appendChild(pending);
-    }
     const input = document.createElement('input');
     input.placeholder = 'Friend referral code';
     input.setAttribute('aria-label', 'Friend referral code');
@@ -227,8 +222,8 @@ export function mountRewards(ctx) {
       if (!result.ok && result.reason === 'self') return ctx.toast('That is your own code');
       if (!result.ok && result.reason === 'used') return ctx.toast('A referral code is already entered');
       if (!result.ok) return ctx.toast('Enter a referral code. Gift codes stay in Buy coins.');
-      ctx.save();
-      ctx.toast('Referral stored as pending verification');
+      if (result.coins) ctx.addCoins(result.coins);
+      ctx.toast('You earned ' + result.coins + ' coins. Your friend earns ' + result.friend + ' coins. Earned, not bought.');
       shell();
     }));
     box.appendChild(btn('Share my park', '', () => ctx.sharePark()));
@@ -275,7 +270,7 @@ export function mountRewards(ctx) {
     const box = document.createElement('div');
     const board = ctx.state.ops.board || { rating: 0, visitors: 0, entries: [] };
     const p = document.createElement('p');
-    p.textContent = 'This device only. Best park rating ' + (board.rating || 0) + '. Visitors welcomed ' + (ctx.state.ops.stats.visitors || 0) + '.';
+    p.textContent = 'This device only. Best park rating ' + (board.rating || 0) + '. Visitors welcomed ' + (ctx.state.ops.stats.visitors || 0) + '. Idle visitor coins earned ' + (ctx.state.ops.visitorCoins || 0) + ', capped at 8 hours away.';
     box.appendChild(p);
     (board.entries || []).slice().reverse().forEach((entry) => {
       const row = document.createElement('div');
@@ -291,6 +286,11 @@ export function mountRewards(ctx) {
     const intro = document.createElement('p');
     intro.textContent = 'Featured parks are curated in gallery.json. Visit loads a park on this device and does not replace your save.';
     box.appendChild(intro);
+    const page = document.createElement('a');
+    page.href = 'gallery.html';
+    page.className = 'money-link';
+    page.textContent = 'Open the featured parks page';
+    box.appendChild(page);
     const list = document.createElement('div');
     list.textContent = 'Loading featured parks.';
     box.appendChild(list);

@@ -95,25 +95,34 @@ test('park codes round trip and likes stay local', () => {
   assert.equal(live.decodePark(live.codeFromUrl(url), tools.getItem)[0].id, 'Speaker');
 });
 
-test('referral codes stay pending and do not consume gift codes', () => {
+test('referral codes pay a fixed earned bonus and do not consume gift codes', () => {
   const ops = live.ensureOps({});
   const self = live.ensureReferral(ops, new Uint8Array([1, 2, 3, 4, 5, 6]));
   assert.match(self, /^RF-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
   assert.equal(live.enterReferral(ops, self).reason, 'self');
   const other = live.enterReferral(ops, 'RF-AAAAAA');
   assert.equal(other.ok, true);
-  assert.equal(other.status, 'pending');
-  assert.equal(ops.pendingCoins, live.REFERRAL_BONUS);
+  assert.equal(other.status, 'earned');
+  assert.equal(other.coins, live.REFERRAL_BONUS);
+  assert.equal(other.friend, live.REFERRAL_BONUS);
   assert.equal(ops.referral.pending[0].friend, live.REFERRAL_BONUS);
   assert.equal(live.enterReferral(ops, 'RF-BBBBBB').reason, 'used');
   assert.equal(live.classifyCode('PB-1200-ABCDEF01-ABCDEF01').type, 'gift');
   assert.equal(live.enterReferral(ops, 'PB-1000-AAAAAAAA-BBBBBBBB').reason, 'invalid');
   const verified = live.applyOwner(ops);
-  assert.equal(verified.owner, true);
   assert.equal(verified.vip, true);
-  assert.equal(verified.coins, live.REFERRAL_BONUS);
-  assert.equal(ops.pendingCoins, 0);
-  assert.equal(ops.referral.pending[0].status, 'verified');
+});
+
+test('visitor income pays coins and caps at 8 hours', () => {
+  const pieces = [{ id: 'Speaker' }, { id: tools.itemAt(20).id }];
+  const rating = live.parkRating(pieces, tools.getItem);
+  const ops = live.ensureOps({});
+  assert.equal(live.accrueVisitorCoins(ops, pieces, tools.getItem, 5000), 0);
+  const start = ops.lastVisitorCoinAt;
+  const eight = live.accrueVisitorCoins(ops, pieces, tools.getItem, start + 8 * 60 * 60 * 1000);
+  const twelve = live.accrueVisitorCoins(ops, pieces, tools.getItem, ops.lastVisitorCoinAt + 12 * 60 * 60 * 1000);
+  assert.equal(eight, rating * 48);
+  assert.equal(twelve, rating * 48);
 });
 
 test('Christmas 2026 has a window, exclusive tools, and quests', () => {

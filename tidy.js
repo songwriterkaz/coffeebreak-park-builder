@@ -89,6 +89,24 @@ export function pickupPieces(pieces, indexes) {
   return clonePieces(pieces).filter((_, index) => !drop.has(index));
 }
 
+export function starterSpeakers(plotX, plotZ) {
+  const out = [];
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * Math.PI * 2 + Math.PI / 10;
+    const yaw = Math.atan2(Math.cos(a), Math.sin(a));
+    let r = Math.round(-yaw / (Math.PI / 2));
+    r = ((r % 4) + 4) % 4;
+    out.push({
+      id: 'Speaker',
+      x: Math.round(Math.cos(a) * 20 - plotX),
+      z: Math.round(Math.sin(a) * 20 - plotZ),
+      r,
+      v: 0,
+    });
+  }
+  return out;
+}
+
 export function insideBox(piece, box) {
   const minX = Math.min(box.x0, box.x1);
   const maxX = Math.max(box.x0, box.x1);

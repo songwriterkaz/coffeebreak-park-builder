@@ -6,14 +6,14 @@ import { connectPark } from './net.js';
 import { mountToolShop } from './toolshop.js';
 import { mountRewards } from './rewards.js';
 import {
-  ensureOps, accrueTickets, grantXp, addStat, XP_PLACE, XP_VISITOR, parkRating, recordScore,
+  ensureOps, accrueTickets, accrueVisitorCoins, grantXp, addStat, XP_PLACE, XP_VISITOR, parkRating, recordScore,
   noteGiftCredit, applyOwner, enterReferral, encodePark, decodePark, parkUrl, codeFromUrl,
   likePark,   countSession, countPurchase as countPurchaseStat, eventState, dayKey, weekKey, noteWeekly,
 } from './liveops.js';
 import {
   applyI18n, canRemind as remindReady, markReminded, billionaireChoice, weeklyTheme, SHARE_TAG, CACHE_VERSION,
 } from './platform.js';
-import { clonePieces, autoTidy, movePieces, rotatePieces, pickupPieces, insideBox, snapAxis, orientedFp } from './tidy.js';
+import { clonePieces, autoTidy, movePieces, rotatePieces, pickupPieces, insideBox, snapAxis, orientedFp, starterSpeakers } from './tidy.js';
 
 // ---------- settings (same as the Roblox Config) ----------
 const CFG = { plotSize: 96, grid: 4, maxPieces: 150, startCoins: 100, coinsPerTick: 5, visitorBonus: 3, tickSeconds: 10 };
@@ -45,6 +45,8 @@ if (!loaded || typeof loaded.musicOn !== 'boolean') state.musicOn = Number(loade
 if (!Number.isInteger(state.track) || state.track < 0 || state.track >= TRACKS.length) state.track = 0;
 ensureOps(state);
 accrueTickets(state.ops, state.pieces, getItem, Date.now());
+const idleCoins = accrueVisitorCoins(state.ops, state.pieces, getItem, Date.now());
+if (idleCoins) state.coins += idleCoins;
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {} }
 const isUnlocked = id => { const it = getItem(id); return !!it && (it.cost <= 0 || !!state.unlocked[id]); };
 let visiting = false;
@@ -336,12 +338,10 @@ for (let i = 0; i < 5; i++) {
   g.rotation.y = Math.atan2(Math.cos(a), Math.sin(a)); // face centre
   scene.add(g);
 }
-// 10 party lights and speakers
+// 10 party lights. Speakers are normal pieces, seeded below.
 for (let i = 0; i < 10; i++) {
   const a = i / 10 * Math.PI * 2;
   const l = buildPiece('Lights'); l.position.set(Math.cos(a) * 22, 0, Math.sin(a) * 22); scene.add(l);
-  const s = buildPiece('Speaker'); const a2 = a + Math.PI / 10;
-  s.position.set(Math.cos(a2) * 20, 0, Math.sin(a2) * 20); s.rotation.y = Math.atan2(Math.cos(a2), Math.sin(a2)); scene.add(s);
 }
 const sign = new THREE.Mesh(new THREE.PlaneGeometry(24, 6), new THREE.MeshBasicMaterial({ map: textTex('COFFEEBREAK PARK', '#ff3caa') }));
 sign.position.set(0, 24, 0); scene.add(sign);
@@ -370,6 +370,12 @@ for (let i = 0; i < 30; i++) {
 
 // ---------- placed pieces ----------
 const placed = []; // {data, group}
+const PARK_HALF = 160;
+if (!state.speakersReady) {
+  starterSpeakers(PLOT.x, PLOT.z).forEach((p) => state.pieces.push(p));
+  state.speakersReady = true;
+  save();
+}
 function footprint(id, r) { const f = (getItem(id) || { fp: [4, 4] }).fp; return r % 2 ? [f[1], f[0]] : [f[0], f[1]]; }
 function addPlaced(d) {
   const g = buildPiece(d.id, d.v);
@@ -655,7 +661,7 @@ function closePanels() {
   }
 }
 let buildMode = false, selected = null, ghost = null, rot = 0, variant = 1;
-let tidyMode = 'off', selection = [];
+let tidyMode = 'off', selection = [], removeIndex = -1;
 const undoStack = [], redoStack = [];
 let moveDrag = null, boxDrag = null;
 const ghostPos = new THREE.Vector3(PLOT.x, 0, PLOT.z);
@@ -729,7 +735,7 @@ function renderPiecesPage() {
 }
 function setMode() {
   const it = selected && getItem(selected);
-  const label = tidyMode === 'move' ? 'Moving' : tidyMode === 'box' ? 'Box select' : (buildMode ? (it ? 'Building ' + it.name : 'Build mode') : 'Exploring');
+  const label = tidyMode === 'move' ? 'Moving' : tidyMode === 'box' ? 'Box select' : tidyMode === 'remove' ? 'Removing' : (buildMode ? (it ? 'Building ' + it.name : 'Build mode') : 'Exploring');
   $('mode').textContent = label;
   gridHelper.visible = buildMode || tidyMode !== 'off';
 }
@@ -768,7 +774,8 @@ function pieceIndexAt(lx, lz) {
   for (let i = state.pieces.length - 1; i >= 0; i--) {
     const p = state.pieces[i];
     const [w, d] = orientedFp(fpOf(p.id), p.r);
-    if (Math.abs(p.x - lx) * 2 < w - 0.01 && Math.abs(p.z - lz) * 2 < d - 0.01) return i;
+    const reachW = Math.max(w, 6), reachD = Math.max(d, 6);
+    if (Math.abs(p.x - lx) * 2 < reachW && Math.abs(p.z - lz) * 2 < reachD) return i;
   }
   return -1;
 }
@@ -819,8 +826,27 @@ function place() {
   save(); toast((item || { name: 'Item' }).name + ' placed');
   if (selected === 'Poster') selectPiece('Poster');
 }
+function hidePieceRemove() {
+  removeIndex = -1;
+  const button = $('pieceRemove');
+  if (button) button.hidden = true;
+}
+function showPieceRemove(index) {
+  const button = $('pieceRemove');
+  const piece = state.pieces[index];
+  if (!button || !piece) return;
+  removeIndex = index;
+  const point = new THREE.Vector3(PLOT.x + piece.x, 3, PLOT.z + piece.z);
+  point.project(camera);
+  const x = (point.x * 0.5 + 0.5) * innerWidth + 18;
+  const y = (-point.y * 0.5 + 0.5) * innerHeight - 28;
+  button.hidden = false;
+  button.style.left = Math.max(8, Math.min(innerWidth - 150, x)) + 'px';
+  button.style.top = Math.max(64, Math.min(innerHeight - 160, y)) + 'px';
+}
 function pickupAt(indexes) {
   if (visiting) return toast('Return to your park to build');
+  hidePieceRemove();
   const list = indexes.filter(i => i >= 0 && i < state.pieces.length);
   if (!list.length) return toast('Tap a piece to pick it up');
   const name = (getItem(state.pieces[list[0]].id) || { name: 'Item' }).name;
@@ -842,11 +868,11 @@ function applyLayout(next, message) {
 }
 function moveSelection(dx, dz) {
   if (!selection.length) return toast('Tap a piece to move');
-  applyLayout(movePieces(state.pieces, selection, dx, dz, fpOf, CFG.grid, h), 'Moved');
+  applyLayout(movePieces(state.pieces, selection, dx, dz, fpOf, CFG.grid, PARK_HALF), 'Moved');
 }
 function rotateSelection() {
   if (!selection.length) { rot = (rot + 1) % 4; snapGhost(); return; }
-  applyLayout(rotatePieces(state.pieces, selection, fpOf, CFG.grid, h), 'Rotated');
+  applyLayout(rotatePieces(state.pieces, selection, fpOf, CFG.grid, PARK_HALF), 'Rotated');
 }
 function undoLayout() {
   if (!undoStack.length) return toast('Nothing to undo');
@@ -866,7 +892,7 @@ function redoLayout() {
 }
 function runAutoTidy() {
   if (!state.pieces.length) return toast('The park is already empty');
-  applyLayout(autoTidy(state.pieces, fpOf, CFG.grid, h), 'Park tidied');
+  applyLayout(autoTidy(state.pieces, fpOf, CFG.grid, PARK_HALF), 'Park tidied');
 }
 function askClear() {
   const el = $('tidyConfirm');
@@ -882,7 +908,7 @@ function clearPark() {
 }
 function groundPoint(clientX, clientY) {
   ray.setFromCamera(new THREE.Vector2(clientX / innerWidth * 2 - 1, -clientY / innerHeight * 2 + 1), camera);
-  const hit = ray.intersectObject(plotMesh)[0];
+  const hit = ray.intersectObjects([plotMesh, ground], false)[0];
   return hit ? hit.point : null;
 }
 function selectIndex(index, add) {
@@ -899,7 +925,15 @@ function setTidy(mode) {
     if (ghost) { unregister(ghost); scene.remove(ghost); ghost = null; }
   }
   setMode();
-  toast(tidyMode === 'move' ? 'Tap a piece, then tap a new spot' : tidyMode === 'box' ? 'Drag a box around the pieces to move' : 'Build mode');
+  const note = tidyMode === 'move' ? 'Tap a piece, then tap a new spot' : tidyMode === 'box' ? 'Drag a box around the pieces to move' : tidyMode === 'remove' ? 'Tap each piece to remove it' : 'Build mode';
+  toast(note);
+  const toggle = $('bRemoveMode');
+  if (toggle) {
+    const on = tidyMode === 'remove';
+    toggle.classList.toggle('sel', on);
+    toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+    toggle.textContent = on ? 'Removing' : 'Remove mode';
+  }
 }
 function goPark() { player.position.set(PLOT.x, 0, PLOT.z - h + 6); player.rotation.y = Math.PI; camYaw = Math.PI; vel.set(0, 0, 0); }
 function done() { buildMode = false; selected = null; if (ghost) { unregister(ghost); scene.remove(ghost); ghost = null; } closePanels(); setMode(); }
@@ -908,6 +942,9 @@ $('bBuild').onclick = () => { tidyMode = 'off'; buildMode = true; setMode(); tog
 $('bRotate').onclick = () => rotateSelection();
 $('bPlace').onclick = place;
 $('bDelete').onclick = del;
+if ($('bClearBuilds')) $('bClearBuilds').onclick = () => askClear();
+if ($('bRemoveMode')) $('bRemoveMode').onclick = () => setTidy('remove');
+if ($('pieceRemove')) $('pieceRemove').onclick = (ev) => { ev.stopPropagation(); if (removeIndex >= 0) pickupAt([removeIndex]); };
 function renderTidy() {
   const el = $('tidy');
   el.innerHTML = '';
@@ -933,7 +970,7 @@ function renderTidy() {
   add('Undo', '', () => undoLayout());
   add('Redo', 'alt', () => redoLayout());
   add('Auto-tidy', '', () => runAutoTidy());
-  add('Clear park', 'alt', () => askClear());
+  add('Clear builds', 'alt', () => askClear());
   el.appendChild(row);
 }
 if ($('bTidy')) $('bTidy').onclick = () => toggle('tidy', renderTidy);
@@ -1137,15 +1174,18 @@ setupShop({
     if (!result.ok && result.reason === 'self') return toast('That is your own code');
     if (!result.ok && result.reason === 'used') return toast('A referral code is already entered');
     if (!result.ok) return toast('That referral code is not valid');
+    state.coins += result.coins;
+    updateCoins();
     save();
-    toast('Referral stored as pending verification');
+    toast('You earned ' + result.coins + ' coins. Your friend earns ' + result.friend + ' coins. Earned, not bought.');
   },
   onGift(result) {
+    if (result.coins > 0) state.ops.vip = true;
     const starter = noteGiftCredit(state.ops, result.coins);
-    if (!starter.starter) return;
-    starter.tools.forEach(unlock);
+    if (starter.starter) starter.tools.forEach(unlock);
+    updateCoins();
     save();
-    toast('Starter tools unlocked');
+    toast(starter.starter ? 'Starter tools unlocked. Supporter badge on.' : 'Supporter badge on.');
   },
 });
 $('bDone').onclick = done;
@@ -1260,11 +1300,29 @@ addEventListener('pointerup', e => {
     const pt = groundPoint(e.clientX, e.clientY) || moveDrag.origin;
     const dx = pt.x - moveDrag.origin.x, dz = pt.z - moveDrag.origin.z;
     if (moveDrag.moved) {
-      const next = movePieces(state.pieces, moveDrag.indexes, dx, dz, fpOf, CFG.grid, h);
+      const next = movePieces(state.pieces, moveDrag.indexes, dx, dz, fpOf, CFG.grid, PARK_HALF);
       if (next) commitPieces(next, 'Moved');
       else { rebuild(state.pieces); toast('That spot is taken'); }
-    }
+      hidePieceRemove();
+    } else showPieceRemove(moveDrag.indexes[0]);
     moveDrag = null; drag = null; return;
+  }
+  if (movedPx < 12 && tidyMode === 'remove') {
+    const pt = groundPoint(e.clientX, e.clientY);
+    const idx = pt ? pieceIndexAt(pt.x - PLOT.x, pt.z - PLOT.z) : -1;
+    if (idx >= 0) pickupAt([idx]);
+    else hidePieceRemove();
+    drag = null; return;
+  }
+  if (movedPx < 12) {
+    const pt = groundPoint(e.clientX, e.clientY);
+    const idx = pt ? pieceIndexAt(pt.x - PLOT.x, pt.z - PLOT.z) : -1;
+    if (idx >= 0) {
+      selectIndex(idx, e.shiftKey);
+      showPieceRemove(idx);
+      drag = null; return;
+    }
+    hidePieceRemove();
   }
   if (movedPx < 12 && tidyMode === 'move') {
     const pt = groundPoint(e.clientX, e.clientY);
@@ -1309,6 +1367,8 @@ setInterval(() => {
     grantXp(state.ops, visitors * XP_VISITOR);
   }
   accrueTickets(state.ops, state.pieces, getItem, Date.now());
+  const idle = accrueVisitorCoins(state.ops, state.pieces, getItem, Date.now());
+  if (idle) state.coins += idle;
   recordScore(state.ops, parkRating(state.pieces, getItem), state.ops.stats.visitors || 0);
   updateCoins();
   save();
@@ -1387,7 +1447,7 @@ frame();
 window.__setGhost = (x, z) => { ghostPos.set(PLOT.x + x, 0, PLOT.z + z); snapGhost(); };
 window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, updateCoins, openMoney, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };
 window.__tidy = {
-  moveSelection, rotateSelection, undoLayout, redoLayout, runAutoTidy, clearPark, pickupAt, setTidy,
+  moveSelection, rotateSelection, undoLayout, redoLayout, runAutoTidy, clearPark, pickupAt, setTidy, showPieceRemove,
   get selection() { return selection.slice(); },
   setSelection(list) { selection = list.slice(); highlight(); },
 };

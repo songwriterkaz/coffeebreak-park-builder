@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { autoTidy, movePieces, rotatePieces, pickupPieces, insideBox, snapAxis } from './tidy.js';
+import { autoTidy, movePieces, rotatePieces, pickupPieces, insideBox, snapAxis, starterSpeakers } from './tidy.js';
 
 const fp = () => [8, 8];
 
@@ -32,6 +32,20 @@ test('move, rotate, and pick up keep the other pieces', () => {
   assert.equal(turned[1].r, 1);
   const left = pickupPieces(pieces, [0]);
   assert.deepEqual(left.map((p) => p.id), ['bench']);
+});
+
+test('plaza speakers are normal pieces that can move', () => {
+  const speakers = starterSpeakers(0, 124);
+  assert.equal(speakers.length, 10);
+  assert.equal(new Set(speakers.map((p) => p.x + ',' + p.z)).size, 10);
+  speakers.forEach((p) => assert.equal(p.id, 'Speaker'));
+  const moved = movePieces(speakers, [0], 4, 0, fp, 4, 160);
+  assert.equal(moved[0].id, 'Speaker');
+  assert.notEqual(moved[0].x, speakers[0].x);
+  const turned = rotatePieces(moved, [0], fp, 4, 160);
+  assert.equal(turned[0].r, (speakers[0].r + 1) % 4);
+  const left = pickupPieces(turned, [0]);
+  assert.equal(left.filter((p) => p.id === 'Speaker').length, 9);
 });
 
 test('box select uses plot coordinates', () => {

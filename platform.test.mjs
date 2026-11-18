@@ -63,7 +63,7 @@ test('the app is installable and does not add external IAP', () => {
   assert.match(html, /rel="manifest"/);
   assert.match(html, /id="bInstall"/);
   assert.match(manifest, /"display": "standalone"/);
-  assert.match(sw, /park-builder-v3/);
+  assert.match(sw, /park-builder-v4/);
   assert.match(html, /serviceWorker|sw\.js/);
   assert.doesNotMatch(manifest + sw, /paypal|billing|RevenueCat/i);
 });
