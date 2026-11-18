@@ -13,6 +13,7 @@ import {
 import {
   applyI18n, canRemind as remindReady, markReminded, billionaireChoice, weeklyTheme, SHARE_TAG, CACHE_VERSION,
 } from './platform.js';
+import { clonePieces, autoTidy, movePieces, rotatePieces, pickupPieces, insideBox, snapAxis, orientedFp } from './tidy.js';
 
 // ---------- settings (same as the Roblox Config) ----------
 const CFG = { plotSize: 96, grid: 4, maxPieces: 150, startCoins: 100, coinsPerTick: 5, visitorBonus: 3, tickSeconds: 10 };
@@ -654,6 +655,9 @@ function closePanels() {
   }
 }
 let buildMode = false, selected = null, ghost = null, rot = 0, variant = 1;
+let tidyMode = 'off', selection = [];
+const undoStack = [], redoStack = [];
+let moveDrag = null, boxDrag = null;
 const ghostPos = new THREE.Vector3(PLOT.x, 0, PLOT.z);
 let toolsCat = 'all', toolsQuery = '', toolsPage = 0;
 function renderPieces() {
@@ -661,7 +665,7 @@ function renderPieces() {
   el.innerHTML = '';
   const h = document.createElement('h3'); h.textContent = 'Build'; el.appendChild(h);
   const tabs = document.createElement('div'); tabs.className = 'tabs';
-  CATS.forEach(c => {
+  CATS.filter(c => c.id !== 'packs').forEach(c => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'tab' + (toolsCat === c.id ? ' sel' : ''); b.textContent = c.name;
     b.onclick = () => { toolsCat = c.id; toolsPage = 0; renderPieces(); };
@@ -680,16 +684,33 @@ function renderPieces() {
   renderPiecesPage();
 }
 function buyOrSelect(p) {
-  if (!isUnlocked(p.id)) return toast('Buy this tool in the Tool Shop');
+  if (p.count) return toast('Theme packs are in the Tool Shop');
+  if (!isUnlocked(p.id)) {
+    if (p.cat === 'event' && eventState(new Date()).phase !== 'live') {
+      return toast('Christmas tools open from 1 to 31 December 2026.');
+    }
+    if (state.coins < p.cost) {
+      countPurchaseStat(state.ops);
+      openMoney();
+      return toast('You need more coins. The PayID panel is open.');
+    }
+    state.coins -= p.cost;
+    unlock(p.id);
+    state.ops.analytics.toolsBought += 1;
+    addStat(state.ops, 'buy', 1);
+    updateCoins();
+    save();
+    toast(p.name + ' unlocked');
+  }
   selectPiece(p.id); closePanels();
 }
 function renderPiecesPage() {
   const grid = $('toolsGrid'), meta = $('toolsMeta'), pager = $('toolsPage');
   if (!grid) return;
-  const { total, items } = pageTools(toolsCat, toolsQuery, toolsPage, PAGE_SIZE, { own: 'owned', isOwned: (id) => isUnlocked(id) });
+  const { total, items } = pageTools(toolsCat, toolsQuery, toolsPage, PAGE_SIZE, {});
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (toolsPage >= pages) { toolsPage = pages - 1; return renderPiecesPage(); }
-  meta.textContent = 'Owned tools ' + total.toLocaleString() + '. Page ' + (toolsPage + 1) + ' of ' + pages;
+  meta.textContent = total.toLocaleString() + ' tools. Page ' + (toolsPage + 1) + ' of ' + pages;
   grid.innerHTML = '';
   items.forEach(p => {
     const b = document.createElement('button');
@@ -706,7 +727,12 @@ function renderPiecesPage() {
   next.disabled = toolsPage >= pages - 1; next.onclick = () => { toolsPage += 1; renderPiecesPage(); };
   pager.appendChild(prev); pager.appendChild(next);
 }
-function setMode() { const it = selected && getItem(selected); $('mode').textContent = buildMode ? (it ? 'Building ' + it.name : 'Build mode') : 'Exploring'; gridHelper.visible = buildMode; }
+function setMode() {
+  const it = selected && getItem(selected);
+  const label = tidyMode === 'move' ? 'Moving' : tidyMode === 'box' ? 'Box select' : (buildMode ? (it ? 'Building ' + it.name : 'Build mode') : 'Exploring');
+  $('mode').textContent = label;
+  gridHelper.visible = buildMode || tidyMode !== 'off';
+}
 function selectPiece(id) {
   selected = id; if (id === 'Poster') variant = variant % 5 + 1;
   if (ghost) { unregister(ghost); scene.remove(ghost); }
@@ -737,6 +763,43 @@ function placeGhostInFront() {
   const f = new THREE.Vector3(-Math.sin(player.rotation.y), 0, -Math.cos(player.rotation.y));
   ghostPos.copy(player.position).addScaledVector(f, 14); snapGhost();
 }
+function fpOf(id) { return (getItem(id) || { fp: [4, 4] }).fp; }
+function pieceIndexAt(lx, lz) {
+  for (let i = state.pieces.length - 1; i >= 0; i--) {
+    const p = state.pieces[i];
+    const [w, d] = orientedFp(fpOf(p.id), p.r);
+    if (Math.abs(p.x - lx) * 2 < w - 0.01 && Math.abs(p.z - lz) * 2 < d - 0.01) return i;
+  }
+  return -1;
+}
+function remember() {
+  undoStack.push(clonePieces(state.pieces));
+  if (undoStack.length > 40) undoStack.shift();
+  redoStack.length = 0;
+}
+function rebuild(next) {
+  clearRendered();
+  state.pieces = clonePieces(next);
+  state.pieces.filter(d => getItem(d.id)).forEach(addPlaced);
+  selection = selection.filter(i => i < state.pieces.length);
+  highlight();
+  save();
+}
+function commitPieces(next, message) {
+  remember();
+  rebuild(next);
+  if (message) toast(message);
+}
+function highlight() {
+  placed.forEach((p, i) => {
+    const on = selection.includes(i);
+    p.group.traverse(o => {
+      if (!o.isMesh || !o.material || !o.material.emissive) return;
+      if (o.userData.baseEmissive == null) o.userData.baseEmissive = o.material.emissive.getHex();
+      o.material.emissive.setHex(on ? 0xffd24a : o.userData.baseEmissive);
+    });
+  });
+}
 function place() {
   if (visiting) return toast('Return to your park to build');
   if (!buildMode || !selected) return toast('Press Build and pick a piece first');
@@ -744,6 +807,7 @@ function place() {
   const x = ghost.userData.lx, z = ghost.userData.lz;
   if (placed.length >= CFG.maxPieces) return toast('Your park is full');
   if (overlaps(selected, x, z, rot)) return toast('Something is already there');
+  remember();
   const d = { id: selected, x, z, r: rot, v: variant };
   state.pieces.push(d); addPlaced(d);
   const item = getItem(selected);
@@ -755,23 +819,126 @@ function place() {
   save(); toast((item || { name: 'Item' }).name + ' placed');
   if (selected === 'Poster') selectPiece('Poster');
 }
-function del() {
+function pickupAt(indexes) {
   if (visiting) return toast('Return to your park to build');
+  const list = indexes.filter(i => i >= 0 && i < state.pieces.length);
+  if (!list.length) return toast('Tap a piece to pick it up');
+  const name = (getItem(state.pieces[list[0]].id) || { name: 'Item' }).name;
+  const next = pickupPieces(state.pieces, list);
+  selection = [];
+  commitPieces(next, list.length > 1 ? name + ' and ' + (list.length - 1) + ' more picked up' : name + ' picked up. It stays in your list.');
+}
+function del() {
+  if (selection.length) return pickupAt(selection.slice());
   const ref = buildMode && ghost ? ghost.position : player.position;
-  let best = null, bd = 16;
-  for (const p of placed) { const dd = p.group.position.distanceTo(ref); if (dd < bd) { bd = dd; best = p; } }
-  if (!best) return toast('Stand next to a piece in your park to delete it');
-  unregister(best.group); scene.remove(best.group);
-  placed.splice(placed.indexOf(best), 1); state.pieces.splice(state.pieces.indexOf(best.data), 1); save();
-  toast((getItem(best.data.id) || { name: 'Item' }).name + ' removed');
+  let best = -1, bd = 16;
+  placed.forEach((p, i) => { const dd = p.group.position.distanceTo(ref); if (dd < bd) { bd = dd; best = i; } });
+  if (best < 0) return toast('Stand next to a piece in your park to pick it up');
+  pickupAt([best]);
+}
+function applyLayout(next, message) {
+  if (!next) return toast('That spot is taken');
+  commitPieces(next, message);
+}
+function moveSelection(dx, dz) {
+  if (!selection.length) return toast('Tap a piece to move');
+  applyLayout(movePieces(state.pieces, selection, dx, dz, fpOf, CFG.grid, h), 'Moved');
+}
+function rotateSelection() {
+  if (!selection.length) { rot = (rot + 1) % 4; snapGhost(); return; }
+  applyLayout(rotatePieces(state.pieces, selection, fpOf, CFG.grid, h), 'Rotated');
+}
+function undoLayout() {
+  if (!undoStack.length) return toast('Nothing to undo');
+  redoStack.push(clonePieces(state.pieces));
+  const prev = undoStack.pop();
+  selection = [];
+  rebuild(prev);
+  toast('Undone');
+}
+function redoLayout() {
+  if (!redoStack.length) return toast('Nothing to redo');
+  undoStack.push(clonePieces(state.pieces));
+  const next = redoStack.pop();
+  selection = [];
+  rebuild(next);
+  toast('Redone');
+}
+function runAutoTidy() {
+  if (!state.pieces.length) return toast('The park is already empty');
+  applyLayout(autoTidy(state.pieces, fpOf, CFG.grid, h), 'Park tidied');
+}
+function askClear() {
+  const el = $('tidyConfirm');
+  if (!el) return;
+  el.classList.add('show');
+}
+function clearPark() {
+  const el = $('tidyConfirm');
+  if (el) el.classList.remove('show');
+  if (!state.pieces.length) return toast('The park is already empty');
+  selection = [];
+  commitPieces([], 'Park cleared. Bought tools stay in your list.');
+}
+function groundPoint(clientX, clientY) {
+  ray.setFromCamera(new THREE.Vector2(clientX / innerWidth * 2 - 1, -clientY / innerHeight * 2 + 1), camera);
+  const hit = ray.intersectObject(plotMesh)[0];
+  return hit ? hit.point : null;
+}
+function selectIndex(index, add) {
+  if (index < 0) return;
+  if (add && selection.includes(index)) selection = selection.filter(i => i !== index);
+  else if (add) selection = selection.concat(index);
+  else selection = [index];
+  highlight();
+}
+function setTidy(mode) {
+  tidyMode = tidyMode === mode ? 'off' : mode;
+  if (tidyMode !== 'off') {
+    buildMode = false;
+    if (ghost) { unregister(ghost); scene.remove(ghost); ghost = null; }
+  }
+  setMode();
+  toast(tidyMode === 'move' ? 'Tap a piece, then tap a new spot' : tidyMode === 'box' ? 'Drag a box around the pieces to move' : 'Build mode');
 }
 function goPark() { player.position.set(PLOT.x, 0, PLOT.z - h + 6); player.rotation.y = Math.PI; camYaw = Math.PI; vel.set(0, 0, 0); }
 function done() { buildMode = false; selected = null; if (ghost) { unregister(ghost); scene.remove(ghost); ghost = null; } closePanels(); setMode(); }
 function toggle(id, fill) { const el = $(id), was = el.classList.contains('show'); closePanels(); if (!was) { fill(); el.classList.add('show'); } }
-$('bBuild').onclick = () => { buildMode = true; setMode(); toggle('pieces', renderPieces); };
-$('bRotate').onclick = () => { rot = (rot + 1) % 4; snapGhost(); };
+$('bBuild').onclick = () => { tidyMode = 'off'; buildMode = true; setMode(); toggle('pieces', renderPieces); };
+$('bRotate').onclick = () => rotateSelection();
 $('bPlace').onclick = place;
 $('bDelete').onclick = del;
+function renderTidy() {
+  const el = $('tidy');
+  el.innerHTML = '';
+  const h = document.createElement('h3'); h.textContent = 'Tidy park'; el.appendChild(h);
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = 'Move, rotate, or pick up pieces. Bought tools stay in your list.';
+  el.appendChild(note);
+  const row = document.createElement('div');
+  row.className = 'tools-grid';
+  const add = (label, className, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    if (className) b.className = className;
+    b.textContent = label;
+    b.onclick = fn;
+    row.appendChild(b);
+  };
+  add(tidyMode === 'move' ? 'Moving' : 'Move', tidyMode === 'move' ? 'sel' : '', () => { setTidy('move'); renderTidy(); });
+  add('Rotate', 'alt', () => rotateSelection());
+  add('Pick up', 'alt', () => del());
+  add(tidyMode === 'box' ? 'Boxing' : 'Box select', tidyMode === 'box' ? 'sel' : '', () => { setTidy('box'); renderTidy(); });
+  add('Undo', '', () => undoLayout());
+  add('Redo', 'alt', () => redoLayout());
+  add('Auto-tidy', '', () => runAutoTidy());
+  add('Clear park', 'alt', () => askClear());
+  el.appendChild(row);
+}
+if ($('bTidy')) $('bTidy').onclick = () => toggle('tidy', renderTidy);
+if ($('clearYes')) $('clearYes').onclick = () => clearPark();
+if ($('clearNo')) $('clearNo').onclick = () => { const el = $('tidyConfirm'); if (el) el.classList.remove('show'); };
 $('bMusic').onclick = () => toggle('music', () => {
   const el = $('music'); el.innerHTML = '<h3>Coffeebreak music</h3>';
   TRACKS.forEach((t, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t.name; b.onclick = () => { playTrack(i); closePanels(); }; el.appendChild(b); });
@@ -1013,8 +1180,13 @@ $('play').onclick = () => {
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (e.key === 'Escape') closePanels();
-  if (e.code === 'KeyR') { rot = (rot + 1) % 4; snapGhost(); }
+  if (e.key === 'Escape') { closePanels(); const c = $('tidyConfirm'); if (c) c.classList.remove('show'); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !(e.target && e.target.closest && e.target.closest('input, textarea'))) {
+    e.preventDefault();
+    if (e.shiftKey) redoLayout(); else undoLayout();
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redoLayout(); }
+  if (e.code === 'KeyR') rotateSelection();
   if (e.code === 'Enter') place();
   if (e.code === 'Delete' || e.code === 'Backspace') del();
   if (e.code === 'Space') e.preventDefault();
@@ -1024,18 +1196,92 @@ let camYaw = 0, camPitch = 0.45, camDist = 22;
 const joy = { x: 0, y: 0, id: null };
 let drag = null;
 const ray = new THREE.Raycaster();
-renderer.domElement.addEventListener('pointerdown', e => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY }; });
+renderer.domElement.addEventListener('pointerdown', e => {
+  const pt = (tidyMode === 'move' || tidyMode === 'box') ? groundPoint(e.clientX, e.clientY) : null;
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, pt };
+  if (tidyMode === 'box' && pt) {
+    boxDrag = { x0: pt.x - PLOT.x, z0: pt.z - PLOT.z, x1: pt.x - PLOT.x, z1: pt.z - PLOT.z };
+    const box = $('selectBox');
+    if (box) { box.hidden = false; box.style.left = e.clientX + 'px'; box.style.top = e.clientY + 'px'; box.style.width = '0px'; box.style.height = '0px'; }
+    return;
+  }
+  if (tidyMode === 'move' && pt) {
+    const idx = pieceIndexAt(pt.x - PLOT.x, pt.z - PLOT.z);
+    if (idx >= 0) {
+      if (!selection.includes(idx)) selection = [idx];
+      highlight();
+      moveDrag = { indexes: selection.slice(), start: selection.map(i => ({ x: state.pieces[i].x, z: state.pieces[i].z })), origin: pt, moved: false };
+    }
+  }
+});
 addEventListener('pointermove', e => {
   if (!drag || drag.id !== e.pointerId) return;
+  if (boxDrag) {
+    const pt = groundPoint(e.clientX, e.clientY);
+    if (pt) { boxDrag.x1 = pt.x - PLOT.x; boxDrag.z1 = pt.z - PLOT.z; }
+    const box = $('selectBox');
+    if (box) {
+      const left = Math.min(drag.sx, e.clientX), top = Math.min(drag.sy, e.clientY);
+      box.style.left = left + 'px'; box.style.top = top + 'px';
+      box.style.width = Math.abs(e.clientX - drag.sx) + 'px';
+      box.style.height = Math.abs(e.clientY - drag.sy) + 'px';
+    }
+    return;
+  }
+  if (moveDrag) {
+    const pt = groundPoint(e.clientX, e.clientY);
+    if (!pt) return;
+    const dx = pt.x - moveDrag.origin.x, dz = pt.z - moveDrag.origin.z;
+    if (Math.hypot(dx, dz) > 0.35) moveDrag.moved = true;
+    moveDrag.indexes.forEach((index, n) => {
+      const group = placed[index] && placed[index].group;
+      if (!group) return;
+      group.position.x = PLOT.x + moveDrag.start[n].x + dx;
+      group.position.z = PLOT.z + moveDrag.start[n].z + dz;
+    });
+    return;
+  }
   camYaw -= (e.clientX - drag.x) * 0.006; camPitch = Math.max(0.05, Math.min(1.2, camPitch + (e.clientY - drag.y) * 0.004));
   drag.x = e.clientX; drag.y = e.clientY;
 });
 addEventListener('pointerup', e => {
   if (!drag || drag.id !== e.pointerId) return;
-  if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6 && buildMode && ghost) {
-    ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), camera);
-    const hit = ray.intersectObject(plotMesh)[0];
-    if (hit) { ghostPos.copy(hit.point); snapGhost(); }
+  const movedPx = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy);
+  if (boxDrag) {
+    selection = [];
+    state.pieces.forEach((p, i) => { if (insideBox(p, boxDrag)) selection.push(i); });
+    highlight();
+    const box = $('selectBox');
+    if (box) box.hidden = true;
+    toast(selection.length ? selection.length + ' pieces selected' : 'No pieces in that box');
+    boxDrag = null; drag = null; return;
+  }
+  if (moveDrag) {
+    const pt = groundPoint(e.clientX, e.clientY) || moveDrag.origin;
+    const dx = pt.x - moveDrag.origin.x, dz = pt.z - moveDrag.origin.z;
+    if (moveDrag.moved) {
+      const next = movePieces(state.pieces, moveDrag.indexes, dx, dz, fpOf, CFG.grid, h);
+      if (next) commitPieces(next, 'Moved');
+      else { rebuild(state.pieces); toast('That spot is taken'); }
+    }
+    moveDrag = null; drag = null; return;
+  }
+  if (movedPx < 12 && tidyMode === 'move') {
+    const pt = groundPoint(e.clientX, e.clientY);
+    if (pt) {
+      const lx = pt.x - PLOT.x, lz = pt.z - PLOT.z;
+      const idx = pieceIndexAt(lx, lz);
+      if (idx >= 0) selectIndex(idx, e.shiftKey);
+      else if (selection.length) {
+        const anchor = state.pieces[selection[0]];
+        moveSelection(lx - anchor.x, lz - anchor.z);
+      }
+    }
+    drag = null; return;
+  }
+  if (movedPx < 12 && buildMode && ghost) {
+    const pt = groundPoint(e.clientX, e.clientY);
+    if (pt) { ghostPos.copy(pt); snapGhost(); place(); }
   }
   drag = null;
 });
@@ -1140,3 +1386,8 @@ frame();
 
 window.__setGhost = (x, z) => { ghostPos.set(PLOT.x + x, 0, PLOT.z + z); snapGhost(); };
 window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, updateCoins, openMoney, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };
+window.__tidy = {
+  moveSelection, rotateSelection, undoLayout, redoLayout, runAutoTidy, clearPark, pickupAt, setTidy,
+  get selection() { return selection.slice(); },
+  setSelection(list) { selection = list.slice(); highlight(); },
+};

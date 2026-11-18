@@ -78,8 +78,11 @@ body.touch #help{display:none}
 .shop-filters{display:flex;flex-wrap:wrap;gap:4px}
 .shop-filters select{flex:1;min-width:90px;font:16px "Trebuchet MS",Arial;border:2px solid #ff8cc8;border-radius:12px;padding:8px;background:#fff;color:#2a1640}
 .pass-row,.quest-row{display:flex;justify-content:space-between;gap:6px;align-items:center;background:#0004;border-radius:10px;padding:6px 8px;font-size:13px}
-#eventBanner{position:fixed;top:8px;left:8px;right:8px;z-index:30;background:#4a206e;color:#fff8fc;border:2px solid #fff;border-radius:14px;padding:6px 10px;font-size:13px;text-align:center}
+#eventBanner{position:fixed;top:8px;left:8px;right:8px;z-index:30;background:#4a206e;color:#fff8fc;border:2px solid #fff;border-radius:14px;padding:6px 10px;font-size:13px;text-align:center;pointer-events:none}
 #eventBanner[hidden]{display:none}
+#selectBox{position:fixed;z-index:20;border:2px solid #fff8fc;background:#ffc2e455;pointer-events:none}
+#selectBox[hidden]{display:none}
+#tidyConfirm{z-index:40;flex-direction:column;min-width:min(360px,92vw)}
 #payCard[hidden]{display:none}
 body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
@@ -128,7 +131,7 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 <div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your character, then build your pink music park</div><div>12,000 tools in the Tool Shop</div><p>Coins have no cash value and can't be exchanged for money.</p><div id="creator"></div><div class="join"><label class="name-lab">Name <input id="playerName" maxlength="16" autocomplete="nickname" spellcheck="false"></label><button id="play">Play</button><button id="bInstall" type="button" data-i18n="nav.install">Install app</button></div></div>
 <div id="eventBanner" hidden></div>
 <div id="top"><img src="assets/logo.png" alt="Coffeebreak"><span class="pill" id="coins">100 coins</span><span class="pill" id="tickets">0 tickets</span><span class="pill" id="vipFlag" hidden>Supporter</span><span class="pill" id="mode">Exploring</span><span class="pill" id="now" style="display:none"></span></div>
-<div id="help">WASD or arrows to walk, Space to jump, Escape closes panels<br>Drag to look around, wheel to zoom<br>In build mode click the ground to move the piece, R rotates, Enter places</div>
+<div id="help">WASD or arrows to walk, Space to jump, Escape closes panels<br>Drag to look around, wheel to zoom<br>In build mode tap the ground to place the piece, R rotates, Delete removes</div>
 <div id="msg"></div>
 <div id="pieces" class="panel"></div>
 <div id="music" class="panel"></div>
@@ -137,6 +140,16 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 <div id="shop" class="panel"></div>
 <div id="toolshop" class="panel"></div>
 <div id="rewards" class="panel"></div>
+<div id="tidy" class="panel"></div>
+<div id="tidyConfirm" class="panel" role="dialog" aria-modal="true" aria-label="Clear park">
+<h3>Clear park</h3>
+<p>Clear every piece from your park? Bought tools stay in your list.</p>
+<div class="tools-page">
+<button type="button" id="clearYes">Clear park</button>
+<button type="button" id="clearNo" class="alt">Cancel</button>
+</div>
+</div>
+<div id="selectBox" hidden></div>
 <div id="money" class="panel" aria-label="Send money">
 <h3>Send money</h3>
 <a id="donateLink" class="money-link" href="https://www.gofundme.com/f/help-our-family-through-multiple-health-crises-advocacy-st" target="_blank" rel="noopener">Donate on GoFundMe</a>
@@ -157,7 +170,7 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 <p class="note">Coins are credited once the payment is checked and have no cash value.</p>
 </div>
 <div id="bar">
-<button id="bBuild">Build</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Delete</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
+<button id="bBuild">Build</button><button id="bTidy" type="button">Tidy</button><button id="bRotate" class="alt">Rotate</button><button id="bPlace">Place</button><button id="bDelete" class="alt">Pick up</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
 </div>
 <div id="joy"><div id="knob"></div></div><button id="jump">Jump</button>
 
