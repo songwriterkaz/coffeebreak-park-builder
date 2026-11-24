@@ -1,5 +1,5 @@
 /* Park Builder offline shell. Versioned cache. No in-app purchases. */
-const CACHE = 'park-builder-v4';
+const CACHE = 'park-builder-v5';
 const SHELL = [
   './',
   './index.html',
@@ -12,6 +12,8 @@ const SHELL = [
   './rewards.js',
   './shop.js',
   './money.js',
+  './suno-player.js',
+  './mother-order.js',
   './character.js',
   './net.js',
   './payments.config.js',

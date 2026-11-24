@@ -553,6 +553,7 @@ function playTrack(i) {
   i = trackIndex(i);
   state.track = i;
   state.musicOn = true;
+  if (window.__sunoPlayer && typeof window.__sunoPlayer.pauseForGame === 'function') window.__sunoPlayer.pauseForGame();
   save();
   paintMusicToggle();
   try {

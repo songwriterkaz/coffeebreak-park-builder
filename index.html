@@ -129,6 +129,21 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
   .cr-body{max-height:30vh}
   #start h1{font-size:24px}
 }
+
+#suno,#mother{z-index:30;flex-direction:column;align-items:stretch;gap:8px;min-width:min(400px,94vw);max-height:calc(100vh - 120px - var(--foot,0px));text-align:left;pointer-events:auto;touch-action:auto;user-select:text;-webkit-user-select:text}
+#suno p,#mother p{margin:0;font-weight:normal;font-size:14px;line-height:1.45}
+#suno .note,#mother .note{font-size:12px;color:#ffd6ee}
+#suno .pay,#mother .pay{background:#0007;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.55;user-select:text;-webkit-user-select:text}
+#suno,#suno *,#mother,#mother *{touch-action:auto;user-select:text;-webkit-user-select:text}
+#suno .row,#mother .row{display:flex;flex-wrap:wrap;gap:6px;width:100%;align-items:center}
+#suno .suno-title{font-weight:bold;color:#ffc2e4}
+#sunoList{display:flex;flex-direction:column;gap:4px;max-height:28vh;overflow:auto}
+#sunoList button{width:100%;text-align:left}
+#mother label{display:block;font-size:13px;margin:0}
+#mother input,#mother textarea{width:100%;font:16px "Trebuchet MS",Arial,sans-serif;border:2px solid #ff8cc8;border-radius:12px;padding:8px 10px;background:#fff;color:#2a1640}
+#mother .can{display:flex;align-items:center;gap:10px}
+#mother .can svg{width:54px;height:72px;flex-shrink:0}
+#motherQty{min-width:2.2em;text-align:center;font-weight:bold}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 </head><body>
@@ -139,6 +154,50 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 <div id="msg"></div>
 <div id="pieces" class="panel"></div>
 <div id="music" class="panel"></div>
+
+<div id="suno" class="panel" aria-label="Suno playlist">
+<h3>Suno playlist</h3>
+<p class="note">Songs from Coffee Break on Suno. Play, pause, skip or go back. The next song starts when one ends.</p>
+<p class="suno-title" id="sunoTitle"></p>
+<div class="row">
+<button type="button" id="sunoBack">Back</button>
+<button type="button" id="sunoToggle" aria-pressed="false">Play</button>
+<button type="button" id="sunoSkip">Skip</button>
+</div>
+<p class="note" id="sunoStatus"></p>
+<div id="sunoList"></div>
+</div>
+<div id="mother" class="panel" aria-label="Mother Energy Drink">
+<h3>Mother Energy Drink</h3>
+<div class="can">
+<svg viewBox="0 0 54 72" aria-hidden="true">
+<rect x="14" y="8" width="26" height="58" rx="6" fill="#7ad31a" stroke="#fff" stroke-width="2"/>
+<rect x="16" y="4" width="22" height="8" rx="3" fill="#d9d9d9" stroke="#fff" stroke-width="1.5"/>
+<rect x="18" y="22" width="18" height="22" rx="3" fill="#2a1640"/>
+<text x="27" y="37" text-anchor="middle" fill="#7ad31a" font-size="9" font-family="Trebuchet MS,Arial,sans-serif" font-weight="bold">M</text>
+</svg>
+<div>
+<p>US$10 per 500ml can</p>
+<p class="note">Australia only. Delivered after your PayID payment lands.</p>
+</div>
+</div>
+<div class="row">
+<button type="button" id="motherMinus" aria-label="Fewer cans">-</button>
+<span id="motherQty">1</span>
+<button type="button" id="motherPlus" aria-label="More cans">+</button>
+<button type="button" id="motherAdd">Add to cart</button>
+<button type="button" class="alt" id="motherClear">Clear cart</button>
+</div>
+<p id="motherCart">Cart is empty.</p>
+<label>Name <input id="motherName" autocomplete="name" required></label>
+<label>Delivery address <textarea id="motherAddress" rows="2" autocomplete="street-address" required></textarea></label>
+<label>Phone <input id="motherPhone" type="tel" autocomplete="tel" required></label>
+<p class="pay">Pay by PayID (Teachers Mutual Bank): darkokaz@gmx.com</p>
+<p id="motherTotal">Add a can to the cart to see the total.</p>
+<button type="button" id="motherSubmit">Submit order</button>
+<p class="note" id="motherStatus"></p>
+<p class="note">Other brand names are trademarks of their respective owners. Coffeebreak claims no ownership of them, and they are named only to describe the items.</p>
+</div>
 <div id="outfits" class="panel"></div>
 <div id="look" class="panel"></div>
 <div id="shop" class="panel"></div>
@@ -175,7 +234,7 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 <p class="note">Coins are credited once the payment is checked and have no cash value.</p>
 </div>
 <div id="bar">
-<button id="bBuild" type="button" aria-label="Build">Build</button><button id="bTidy" type="button" aria-label="Tidy park">Tidy</button><button id="bRotate" class="alt" type="button" aria-label="Rotate">Rotate</button><button id="bPlace" type="button" aria-label="Place">Place</button><button id="bDelete" class="alt" type="button" aria-label="Pick up">Pick up</button><button id="bClearBuilds" type="button" aria-label="Clear builds">Clear builds</button><button id="bRemoveMode" type="button" aria-label="Remove mode" aria-pressed="false">Remove mode</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
+<button id="bBuild" type="button" aria-label="Build">Build</button><button id="bTidy" type="button" aria-label="Tidy park">Tidy</button><button id="bRotate" class="alt" type="button" aria-label="Rotate">Rotate</button><button id="bPlace" type="button" aria-label="Place">Place</button><button id="bDelete" class="alt" type="button" aria-label="Pick up">Pick up</button><button id="bClearBuilds" type="button" aria-label="Clear builds">Clear builds</button><button id="bRemoveMode" type="button" aria-label="Remove mode" aria-pressed="false">Remove mode</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bSuno" type="button">Playlist</button><button id="bMother" type="button">Mother</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
 </div>
 <div id="joy"><div id="knob"></div></div><button id="jump">Jump</button>
 
@@ -203,5 +262,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 <script src="payments.config.js"></script>
 <script src="money.js"></script>
+<script src="suno-player.js"></script>
+<script src="mother-order.js"></script>
 <script type="module" src="game.js"></script>
 <!--cb-game-cart-start--><section id="cb-game-cart" data-store="park-builder" aria-label="Cart"><script type="application/json" id="cb-game-cart-data">{"storeId":"park-builder","currency":"USD","items":[{"id":"full","name":"Coffeebreak Park Builder","amount":"10.00","currency":"USD"}]}</script></section><script src="payid-cart/cart.js"></script><script src="payid-cart/game-cart.js"></script><script src="payid-cart/game-mount.js"></script><!--cb-game-cart-end--></body></html>
