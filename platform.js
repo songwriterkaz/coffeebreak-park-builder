@@ -124,4 +124,4 @@ export function markReminded(ops, today) {
   ops.notifyDay = today;
 }
 
-export const CACHE_VERSION = 'park-builder-v4';
+export const CACHE_VERSION = 'park-builder-v6';

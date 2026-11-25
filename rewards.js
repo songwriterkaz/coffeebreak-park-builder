@@ -355,6 +355,16 @@ export function mountRewards(ctx) {
     const p = document.createElement('p');
     p.textContent = 'Sessions ' + a.sessions + '. Purchases started ' + a.purchasesStarted + '. Tools bought ' + a.toolsBought + '.';
     box.appendChild(p);
+    const tally = document.createElement('p');
+    tally.id = 'ownerTally';
+    tally.textContent = 'Visitor tally is loading.';
+    box.appendChild(tally);
+    if (ctx.loadVisitorTally) {
+      Promise.resolve(ctx.loadVisitorTally()).then((stats) => {
+        if (!stats) { tally.textContent = 'Visitor tally is unavailable.'; return; }
+        tally.textContent = 'Visitors ever: ' + stats.total + '. Visitors today: ' + stats.today + '.';
+      }).catch(() => { tally.textContent = 'Visitor tally is unavailable.'; });
+    }
     const ads = btn(ctx.state.ops.adsEnabled ? 'Rewarded slot on' : 'Rewarded slot off', '', () => {
       ctx.state.ops.adsEnabled = !ctx.state.ops.adsEnabled;
       ctx.save();

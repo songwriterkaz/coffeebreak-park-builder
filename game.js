@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { setupShop } from './shop.js';
 import { TOOL_COUNT, CATS, itemAt, getItem, pageTools, PAGE_SIZE } from './tools.js';
 import { loadLook, saveLook, loadName, saveName, sanitizeName, drawCharacter, defaultLook, fillCreator, clampLook } from './character.js';
-import { connectPark } from './net.js';
+import { connectPark, deviceId, fetchRoster, fetchStats, postVisit } from './net.js';
+import { inviteLink, roomFromUrl, roomName, rosterOk } from './social.js';
 import { mountToolShop } from './toolshop.js';
 import { mountRewards } from './rewards.js';
 import {
@@ -450,7 +451,12 @@ function makeCharNode(look, name) {
   root.userData.char = {
     redraw,
     setLook(l) { curLook = clampLook(l); applyScale(curLook); redraw(curAnim, 0, 0, false); },
-    setName(n) { tag.material.map = textTex(n || 'Player', '#9646dc'); tag.material.needsUpdate = true; },
+    setName(n) {
+      const old = tag.material.map;
+      tag.material.map = textTex(n || 'Player', '#9646dc');
+      tag.material.needsUpdate = true;
+      if (old && old !== tag.material.map) old.dispose();
+    },
     _last: -1, _anim: 'idle',
   };
   return root;
@@ -463,9 +469,12 @@ function tickChar(root, speed, time, airborne) {
   const u = root.userData.char;
   if (!u) return;
   const anim = airborne ? 'jump' : (speed > 1 ? 'walk' : 'idle');
-  if (time - (u._last || 0) < 0.07 && u._anim === anim) return;
-  u._last = time; u._anim = anim;
-  u.redraw(anim, time, speed, shouldFlip(root));
+  const flip = shouldFlip(root);
+  if (u._anim === anim && u._flip === flip && anim !== 'walk') {
+    if (time - (u._last || 0) < 0.45) return;
+  } else if (time - (u._last || 0) < 0.09 && u._anim === anim && u._flip === flip) return;
+  u._last = time; u._anim = anim; u._flip = flip;
+  u.redraw(anim, time, speed, flip);
 }
 
 let playerLook = loadLook();
@@ -476,6 +485,7 @@ scene.add(player);
 
 const peers = new Map();
 function upsertPeer(m) {
+  if (!m || !m.id || (net && m.id === net.id)) return;
   let p = peers.get(m.id);
   if (!p) {
     const root = makeCharNode(m.look || defaultLook(), m.name || 'Player');
@@ -490,11 +500,22 @@ function upsertPeer(m) {
   }
   if (m.x != null) { p.tx = m.x; p.ty = m.y || 0; p.tz = m.z; p.tr = m.r || 0; p.a = m.a || p.a; }
 }
+function disposeRoot(root) {
+  root.traverse(obj => {
+    if (obj.geometry && obj.geometry !== geoBox) obj.geometry.dispose();
+    const mats = obj.material ? (Array.isArray(obj.material) ? obj.material : [obj.material]) : [];
+    mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+  });
+}
 function removePeer(id) {
   const p = peers.get(id);
   if (!p) return;
   scene.remove(p.root);
+  disposeRoot(p.root);
   peers.delete(id);
+}
+function clearPeers() {
+  for (const id of [...peers.keys()]) removePeer(id);
 }
 function stepPeers(dt, time) {
   for (const p of peers.values()) {
@@ -1153,6 +1174,7 @@ const liveCtx = {
   likeVisit, endVisit, recordClip, shareShot, enableReminders, installApp, applyMotion,
   visiting: () => visiting,
   eventLive: () => eventState(new Date()).phase === 'live',
+  loadVisitorTally: () => refreshTally(),
   countPurchase: () => countPurchaseStat(state.ops),
   countTools: (n) => { state.ops.analytics.toolsBought += n || 1; },
   addStat: (stat, n) => addStat(state.ops, stat, n),
@@ -1190,39 +1212,238 @@ setupShop({
   },
 });
 $('bDone').onclick = done;
-let net = null, selfAnim = 'idle';
+let net = null, selfAnim = 'idle', entered = false, joinedRoom = '', visitPosted = false;
+let roster = [], chatLines = [], toldOffline = false;
+const muted = new Set();
 function netState() { return { x: player.position.x, y: player.position.y, z: player.position.z, r: player.rotation.y, a: selfAnim }; }
-$('play').onclick = () => {
+function chosenRoom() {
+  const start = $('start');
+  const onStart = !start || start.style.display !== 'none';
+  const primary = onStart ? $('roomCode') : $('roomCodeGame');
+  const secondary = onStart ? $('roomCodeGame') : $('roomCode');
+  const raw = (primary && primary.value.trim()) || (secondary && secondary.value.trim()) || '';
+  return roomName(raw);
+}
+function showPeople() {
+  const el = $('people');
+  if (!el) return;
+  closePanels();
+  el.classList.add('show');
+}
+function syncRoomFields(value) {
+  if ($('roomCode')) $('roomCode').value = value;
+  if ($('roomCodeGame')) $('roomCodeGame').value = value;
+}
+function showTally(stats) {
+  const text = stats ? ('Visitors ever: ' + stats.total + '. Visitors today: ' + stats.today + '.') : 'Visitor tally is unavailable.';
+  for (const id of ['startTally', 'visitTally', 'visitHud', 'ownerTally']) {
+    const el = $(id);
+    if (el) el.textContent = text;
+  }
+}
+function refreshTally() {
+  return fetchStats().then((stats) => { showTally(stats); return stats; }).catch(() => {
+    const el = $('visitHud');
+    if (!el || el.textContent.indexOf('Visitors ever') !== 0) showTally(null);
+    return null;
+  });
+}
+function recordVisit() {
+  if (visitPosted) return refreshTally();
+  return postVisit(deviceId()).then((stats) => { visitPosted = true; showTally(stats); return stats; }).catch(() => refreshTally());
+}
+function paintRoster(names) {
+  if (rosterOk({ count: names.length, names })) roster = names.map((person) => ({ id: person.id, name: person.name }));
+  const count = roster.length;
+  const line = count ? ('People in the park now: ' + count) : 'People in the park now: 0';
+  if ($('peopleNow')) $('peopleNow').textContent = line;
+  if ($('peopleCount')) $('peopleCount').textContent = line;
+  if ($('startPeople')) $('startPeople').textContent = line;
+  for (const id of ['peopleList', 'startPeopleList']) {
+    const list = $(id);
+    if (!list) continue;
+    list.innerHTML = '';
+    if (!count) {
+      const empty = document.createElement('li');
+      empty.textContent = 'Nobody is in this park yet.';
+      list.appendChild(empty);
+      continue;
+    }
+    roster.forEach((person) => {
+      const item = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = person.name + (net && person.id === net.id ? ' (you)' : '');
+      item.appendChild(label);
+      if (net && person.id !== net.id) {
+        const mute = document.createElement('button');
+        mute.type = 'button';
+        mute.textContent = muted.has(person.id) ? 'Unmute' : 'Mute';
+        mute.onclick = () => {
+          if (muted.has(person.id)) muted.delete(person.id); else muted.add(person.id);
+          paintRoster(roster);
+          paintChat();
+        };
+        const report = document.createElement('button');
+        report.type = 'button';
+        report.textContent = 'Report';
+        report.onclick = () => {
+          if (net && net.report(person.id)) return;
+          toast('Report could not be sent');
+        };
+        item.append(mute, report);
+      }
+      list.appendChild(item);
+    });
+  }
+}
+function paintChat() {
+  const log = $('chatLog');
+  if (!log) return;
+  log.innerHTML = '';
+  chatLines.forEach((line) => {
+    if (muted.has(line.id) && (!net || line.id !== net.id)) return;
+    const row = document.createElement('p');
+    const who = document.createElement('b');
+    who.textContent = line.name + ': ';
+    const said = document.createElement('span');
+    said.textContent = line.text;
+    row.append(who, said);
+    if (net && line.id !== net.id) {
+      const mute = document.createElement('button');
+      mute.type = 'button';
+      mute.textContent = muted.has(line.id) ? 'Unmute' : 'Mute';
+      mute.onclick = () => {
+        if (muted.has(line.id)) muted.delete(line.id); else muted.add(line.id);
+        paintChat();
+        paintRoster(roster);
+      };
+      const report = document.createElement('button');
+      report.type = 'button';
+      report.textContent = 'Report';
+      report.onclick = () => { if (!net || !net.report(line.id)) toast('Report could not be sent'); };
+      row.append(mute, report);
+    }
+    log.appendChild(row);
+  });
+  log.scrollTop = log.scrollHeight;
+}
+function addChat(msg) {
+  if (!msg || typeof msg.text !== 'string' || !msg.id) return;
+  chatLines.push({ id: msg.id, name: msg.name || 'Player', text: msg.text });
+  if (chatLines.length > 40) chatLines.shift();
+  paintChat();
+}
+function showInvite() {
+  const link = inviteLink(location.href, chosenRoom());
+  if ($('inviteShow')) $('inviteShow').textContent = link;
+  return link;
+}
+function copyInvite() {
+  const link = showInvite();
+  const done = () => toast('Invite link copied');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(done).catch(() => toast(link));
+    return;
+  }
+  toast(link);
+}
+function pollRoster() {
+  if (net) return;
+  const room = chosenRoom();
+  fetchRoster(room).then((data) => { if (!net) paintRoster(data.names); }).catch(() => {
+    if (net) return;
+    if ($('startPeople')) $('startPeople').textContent = 'People in the park now: unavailable';
+    if ($('peopleNow')) $('peopleNow').textContent = 'People in the park now: unavailable';
+  });
+}
+function enterWorld() {
   const typed = sanitizeName(($('playerName') && $('playerName').value) || '') || 'Player';
   playerName = typed; saveName(playerName); saveLook(playerLook);
   player.userData.char.setLook(playerLook); player.userData.char.setName(playerName);
   $('start').style.display = 'none';
+  if (entered) return;
+  entered = true;
   if (state.musicOn !== false) playTrack(state.track);
   countSession(state.ops);
   save();
   maybeRemind();
   const shared = codeFromUrl(location.href);
   if (shared) visitCode(shared);
+}
+function joinPark() {
+  const room = chosenRoom();
+  enterWorld();
+  showInvite();
+  if (net && joinedRoom === room) { toggle('people', () => {}); return; }
+  if (net) { net.close(); net = null; }
+  clearPeers();
+  roster = [];
+  joinedRoom = room;
+  toldOffline = false;
   net = connectPark({
     name: playerName,
     look: playerLook,
+    room,
     getState: netState,
     onHello(m) { (m.players || []).forEach(upsertPeer); },
+    onReady() { recordVisit(); },
     onJoin: upsertPeer,
     onMove: upsertPeer,
     onLook: upsertPeer,
     onLeave(m) { removePeer(m.id); },
-    onStatus(s) { if (s === 'full') toast('The park is full right now'); },
+    onRoster: paintRoster,
+    onClear: clearPeers,
+    onChat: addChat,
+    onReported() { toast('Report sent'); },
+    onStatus(s) {
+      if (s === 'full') toast('The park is full right now');
+      if (s === 'offline' && !toldOffline) { toldOffline = true; toast('The park connection is offline'); }
+      if (s === 'online') toldOffline = false;
+    },
   });
-};
+  showPeople();
+}
+function sendChat() {
+  const input = $('chatInput');
+  const text = input ? input.value : '';
+  if (!net) return toast('Join the park to chat');
+  const sent = net.chat(text);
+  if (!sent.ok && sent.reason === 'empty') return toast('Type a message first');
+  if (!sent.ok) return toast('Chat could not be sent');
+  if (input) input.value = '';
+}
+$('play').onclick = () => enterWorld();
+if ($('joinPark')) $('joinPark').onclick = () => joinPark();
+if ($('bJoin')) $('bJoin').onclick = () => joinPark();
+if ($('joinRoom')) $('joinRoom').onclick = () => joinPark();
+if ($('copyInvite')) $('copyInvite').onclick = () => copyInvite();
+if ($('copyInviteGame')) $('copyInviteGame').onclick = () => copyInvite();
+if ($('chatSend')) $('chatSend').onclick = () => sendChat();
+if ($('closePeople')) $('closePeople').onclick = () => { const el = $('people'); if (el) el.classList.remove('show'); };
+if ($('chatInput')) $('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); sendChat(); }
+});
+function mirrorRoom(from, to) {
+  if (!from || !to) return;
+  from.addEventListener('input', () => { to.value = from.value; if (!net) pollRoster(); showInvite(); });
+}
+mirrorRoom($('roomCode'), $('roomCodeGame'));
+mirrorRoom($('roomCodeGame'), $('roomCode'));
 
 
 // ---------- input ----------
 const keys = {};
+function typingTarget(e) {
+  const t = e.target;
+  if (!t || !t.tagName) return false;
+  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
+}
 addEventListener('keydown', e => {
-  keys[e.code] = true;
+  const typing = typingTarget(e);
+  if (!typing) keys[e.code] = true;
   if (e.key === 'Escape') { closePanels(); const c = $('tidyConfirm'); if (c) c.classList.remove('show'); }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !(e.target && e.target.closest && e.target.closest('input, textarea'))) {
+  if (typing) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault();
     if (e.shiftKey) redoLayout(); else undoLayout();
   }
@@ -1380,9 +1601,10 @@ addEventListener('beforeunload', save);
 
 // ---------- loop ----------
 const vel = new THREE.Vector3(); let onGround = true;
-const clock = new THREE.Clock(); let T = 0;
+const clock = new THREE.Clock(); let T = 0, frames = 0;
 const tmpQ = new THREE.Quaternion();
 function frame() {
+  frames += 1;
   const dt = Math.min(0.05, clock.getDelta()); T += dt;
   // music level
   if (analyser && audio && !audio.paused) { analyser.getByteFrequencyData(fdata); let s = 0; for (let i = 0; i < 24; i++) s += fdata[i]; level = level * 0.6 + (s / 24 / 255) * 0.4; }
@@ -1443,10 +1665,17 @@ if ($('creator')) {
   const ed = fillCreator($('creator'), { look: playerLook, onChange({ look }) { playerLook = look; saveLook(look); player.userData.char.setLook(look); } });
   if ($('playerName')) $('playerName').value = loadName();
 }
+const linkedRoom = roomFromUrl(location.href);
+if (linkedRoom) syncRoomFields(linkedRoom);
+showInvite();
+refreshTally();
+pollRoster();
+setInterval(pollRoster, 4000);
+setInterval(refreshTally, 8000);
 frame();
 
 window.__setGhost = (x, z) => { ghostPos.set(PLOT.x + x, 0, PLOT.z + z); snapGhost(); };
-window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, updateCoins, openMoney, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };
+window.__game = { state, placed, place, selectPiece, goPark, getItem, itemAt, toolsCount: TOOL_COUNT, peers, player, playTrack, toggleMusic, stopMusic, updateCoins, openMoney, joinPark, get frames() { return frames; }, get roster() { return roster.slice(); }, get playerLook() { return playerLook; }, get playerName() { return playerName; }, get musicOn() { return state.musicOn !== false; }, get audio() { return audio; } };
 window.__tidy = {
   moveSelection, rotateSelection, undoLayout, redoLayout, runAutoTidy, clearPark, pickupAt, setTidy, showPieceRemove,
   get selection() { return selection.slice(); },

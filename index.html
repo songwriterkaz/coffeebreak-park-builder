@@ -17,7 +17,7 @@ canvas{display:block}
 #top img{height:46px;border-radius:10px;background:#fff3;pointer-events:auto}
 .pill{background:#4a206e;color:#fff8fc;border:2px solid #fff;border-radius:20px;padding:6px 12px;font-weight:bold;font-size:16px}
 #coins{background:#4a206e}
-#msg{position:fixed;top:64px;left:50%;transform:translateX(-50%);background:#000a;padding:8px 14px;border-radius:14px;font-size:15px;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;max-width:90vw}
+#msg{position:fixed;top:124px;left:50%;transform:translateX(-50%);background:#000a;padding:8px 14px;border-radius:14px;font-size:15px;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;max-width:90vw}
 #bar{position:fixed;bottom:calc(8px + var(--foot,0px));left:4px;right:4px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:98vw;z-index:8}
 button{font:bold 15px "Trebuchet MS",Arial;color:#2a1640;background:#ffc2e4;border:2px solid #fff;border-radius:14px;padding:9px 13px;min-height:44px;min-width:44px;cursor:pointer;box-shadow:0 3px 0 #4a206e}
 button.alt{color:#fff8fc;background:#4a206e;box-shadow:0 3px 0 #ffc2e4}
@@ -116,6 +116,19 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 .name-lab{display:flex;align-items:center;gap:8px;font-weight:bold;width:min(440px,96vw)}
 .name-lab input{flex:1}
 #start .join{position:sticky;bottom:0;width:min(460px,96vw);display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0 4px;background:linear-gradient(transparent,#8a3cc8 28%)}
+#joinPark,#bJoin{background:#fff;color:#4a206e;box-shadow:0 3px 0 #ff3caa}
+#joinPark{width:min(460px,96vw);font-size:24px}
+#start .note,#presence .pill{font-weight:normal}
+#presence{position:fixed;top:60px;left:8px;z-index:7;display:flex;flex-direction:column;align-items:flex-start;gap:4px;max-width:min(440px,92vw);pointer-events:none}
+#people{z-index:24;flex-direction:column;align-items:stretch;gap:8px;min-width:min(420px,94vw);max-height:min(68vh,560px);text-align:left;pointer-events:auto;touch-action:auto}
+#people,#people *{touch-action:auto;user-select:text;-webkit-user-select:text}
+#people .note{font-size:12px;color:#ffd6ee;font-weight:normal}
+#peopleList,#startPeopleList{margin:0;padding-left:18px;max-height:14vh;overflow:auto;text-align:left;width:100%}
+#peopleList li{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0}
+#chatLog{max-height:16vh;overflow:auto;background:#0004;border-radius:10px;padding:6px}
+#chatLog p{margin:0 0 4px;font-size:14px;font-weight:normal}
+#people .row,#start .join .row{display:flex;flex-wrap:wrap;gap:6px;width:100%;justify-content:center}
+#chatInput{flex:1;min-width:0;font:16px "Trebuchet MS",Arial,sans-serif;border:2px solid #ff8cc8;border-radius:12px;padding:8px 10px;background:#fff;color:#2a1640}
 #look .creator{width:100%}
 #look #lookPreview{width:110px;height:220px}
 #look .cr-prev{flex-basis:110px;min-height:180px}
@@ -147,9 +160,10 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 </head><body>
-<div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your character, then build your pink music park</div><div>12,000 tools in the Tool Shop</div><p>Coins have no cash value and can't be exchanged for money.</p><div id="creator"></div><div class="join"><label class="name-lab">Name <input id="playerName" maxlength="16" autocomplete="nickname" spellcheck="false"></label><button id="play">Play</button><button id="bInstall" type="button" data-i18n="nav.install">Install app</button></div></div>
+<div id="start"><img src="assets/logo.png" alt="Coffeebreak"><h1>Coffeebreak Park Builder</h1><div>Build your character, then build your pink music park</div><div>12,000 tools in the Tool Shop</div><p>Coins have no cash value and can't be exchanged for money.</p><div id="creator"></div><div class="join"><label class="name-lab">Name <input id="playerName" maxlength="16" autocomplete="nickname" spellcheck="false"></label><label class="name-lab">Room code <input id="roomCode" maxlength="12" autocomplete="off" spellcheck="false" placeholder="Optional"></label><button id="joinPark" type="button">Join the park</button><button id="play" type="button">Play</button><button id="copyInvite" type="button">Copy invite link</button><p id="startPeople">People in the park now</p><ul id="startPeopleList"></ul><p id="startTally">Visitor tally is loading.</p><p class="note">Leave the room code empty for the main park. A code and the invite link put friends in the same park.</p><button id="bInstall" type="button" data-i18n="nav.install">Install app</button></div></div>
 <div id="eventBanner" hidden></div>
 <div id="top"><img src="assets/logo.png" alt="Coffeebreak"><span class="pill" id="coins">100 coins</span><span class="pill" id="tickets">0 tickets</span><span class="pill" id="vipFlag" hidden>Supporter</span><span class="pill" id="mode">Exploring</span><span class="pill" id="now" style="display:none"></span></div>
+<div id="presence"><span class="pill" id="peopleNow">People in the park now</span><span class="pill" id="visitHud">Visitor tally is loading.</span></div>
 <div id="help">WASD or arrows to walk, Space to jump, Escape closes panels<br>Drag to look around, wheel to zoom<br>In build mode tap the ground to place the piece, R rotates, Delete removes</div>
 <div id="msg"></div>
 <div id="pieces" class="panel"></div>
@@ -233,8 +247,27 @@ body.reduce-motion *,body.reduce-motion{animation:none;transition:none}
 </div>
 <p class="note">Coins are credited once the payment is checked and have no cash value.</p>
 </div>
+<div id="people" class="panel" aria-label="People in the park">
+<h3>People in the park now</h3>
+<button type="button" id="closePeople" class="alt">Close</button>
+<p id="peopleCount">Join the park to see who is here.</p>
+<ul id="peopleList"></ul>
+<p id="visitTally">Visitor tally is loading.</p>
+<label class="name-lab">Room code <input id="roomCodeGame" maxlength="12" autocomplete="off" spellcheck="false" placeholder="Optional"></label>
+<div class="row">
+<button type="button" id="joinRoom">Join this room</button>
+<button type="button" id="copyInviteGame">Copy invite link</button>
+</div>
+<p class="note" id="inviteShow"></p>
+<h3>Chat</h3>
+<div id="chatLog"></div>
+<div class="row">
+<input id="chatInput" maxlength="140" autocomplete="off" placeholder="Say something">
+<button type="button" id="chatSend">Send</button>
+</div>
+</div>
 <div id="bar">
-<button id="bBuild" type="button" aria-label="Build">Build</button><button id="bTidy" type="button" aria-label="Tidy park">Tidy</button><button id="bRotate" class="alt" type="button" aria-label="Rotate">Rotate</button><button id="bPlace" type="button" aria-label="Place">Place</button><button id="bDelete" class="alt" type="button" aria-label="Pick up">Pick up</button><button id="bClearBuilds" type="button" aria-label="Clear builds">Clear builds</button><button id="bRemoveMode" type="button" aria-label="Remove mode" aria-pressed="false">Remove mode</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bSuno" type="button">Playlist</button><button id="bMother" type="button">Mother</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
+<button id="bJoin" type="button">Join the park</button><button id="bBuild" type="button" aria-label="Build">Build</button><button id="bTidy" type="button" aria-label="Tidy park">Tidy</button><button id="bRotate" class="alt" type="button" aria-label="Rotate">Rotate</button><button id="bPlace" type="button" aria-label="Place">Place</button><button id="bDelete" class="alt" type="button" aria-label="Pick up">Pick up</button><button id="bClearBuilds" type="button" aria-label="Clear builds">Clear builds</button><button id="bRemoveMode" type="button" aria-label="Remove mode" aria-pressed="false">Remove mode</button><button id="bMusic">Music</button><button id="bMusicToggle" class="alt" type="button" data-music-toggle="1" aria-pressed="true">Music: on</button><button id="bSuno" type="button">Playlist</button><button id="bMother" type="button">Mother</button><button id="bOutfit" class="alt">Look</button><button id="bTools" type="button" data-i18n="nav.shop">Shop</button><button id="bRewards" type="button" data-i18n="nav.rewards">Rewards</button><button id="bShop">Buy coins</button><button id="bMoney" type="button">Send money</button><button id="bPark">My Park</button><button id="bDone" class="alt">Done</button>
 </div>
 <div id="joy"><div id="knob"></div></div><button id="jump">Jump</button>
 
